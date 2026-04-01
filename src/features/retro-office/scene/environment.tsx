@@ -167,24 +167,24 @@ function OfficeFlagPole({
   );
 }
 
-const SOCCER_FIELD_WIDTH = 13.2;
-const SOCCER_FIELD_DEPTH = 3.1;
-const SOCCER_STADIUM_BASE_WIDTH = SOCCER_FIELD_WIDTH + 1.6;
-const SOCCER_STADIUM_BASE_DEPTH = SOCCER_FIELD_DEPTH + 1.3;
-const SOCCER_ENTRY_PATH_WIDTH = 1.24;
-const SOCCER_ENTRY_OPENING_WIDTH = 2.2;
+const SOCCER_FIELD_WIDTH = 20.8;
+const SOCCER_FIELD_DEPTH = 7.4;
+const SOCCER_STADIUM_BASE_WIDTH = SOCCER_FIELD_WIDTH + 2.6;
+const SOCCER_STADIUM_BASE_DEPTH = SOCCER_FIELD_DEPTH + 2.1;
+const SOCCER_ENTRY_PATH_WIDTH = 2.1;
+const SOCCER_ENTRY_OPENING_WIDTH = 3.8;
 const SOCCER_TEAM_SHAPE = [
-  { x: 0, z: -1.12, goalkeeper: true },
-  { x: -4.4, z: -0.76, goalkeeper: false },
-  { x: -1.55, z: -0.86, goalkeeper: false },
-  { x: 1.55, z: -0.86, goalkeeper: false },
-  { x: 4.4, z: -0.76, goalkeeper: false },
-  { x: -4.85, z: -0.12, goalkeeper: false },
-  { x: -1.75, z: -0.18, goalkeeper: false },
-  { x: 1.75, z: -0.18, goalkeeper: false },
-  { x: 4.85, z: -0.12, goalkeeper: false },
-  { x: -1.95, z: 0.64, goalkeeper: false },
-  { x: 1.95, z: 0.72, goalkeeper: false },
+  { x: 0, z: -2.72, goalkeeper: true },
+  { x: -6.9, z: -1.86, goalkeeper: false },
+  { x: -2.35, z: -2.02, goalkeeper: false },
+  { x: 2.35, z: -2.02, goalkeeper: false },
+  { x: 6.9, z: -1.86, goalkeeper: false },
+  { x: -7.7, z: -0.24, goalkeeper: false },
+  { x: -2.8, z: -0.3, goalkeeper: false },
+  { x: 2.8, z: -0.3, goalkeeper: false },
+  { x: 7.7, z: -0.24, goalkeeper: false },
+  { x: -3.05, z: 1.84, goalkeeper: false },
+  { x: 3.05, z: 1.98, goalkeeper: false },
 ] as const;
 
 function SoccerPlayer({
@@ -202,9 +202,9 @@ function SoccerPlayer({
   const shortColor = goalkeeper ? teamColor : "#f8fafc";
   const sockColor = goalkeeper ? "#111827" : teamColor;
   return (
-    <group position={position} rotation={[0, facing, 0]} scale={0.9}>
+    <group position={position} rotation={[0, facing, 0]} scale={1.75}>
       <mesh position={[0, 0.1, 0.028]} castShadow>
-        <sphereGeometry args={[0.078, 14, 14]} />
+        <sphereGeometry args={[0.078, 16, 16]} />
         <meshStandardMaterial color="#f1c7a6" roughness={0.9} metalness={0.02} />
       </mesh>
       <mesh position={[0, -0.035, 0]} castShadow receiveShadow>
@@ -261,28 +261,28 @@ function GoalFrame({
 }) {
   return (
     <group position={position} rotation={[0, rotY, 0]}>
-      <mesh position={[-0.52, 0.34, 0]} castShadow>
-        <boxGeometry args={[0.05, 0.68, 0.05]} />
+      <mesh position={[-1.08, 0.62, 0]} castShadow>
+        <boxGeometry args={[0.08, 1.24, 0.08]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.7} metalness={0.14} />
       </mesh>
-      <mesh position={[0.52, 0.34, 0]} castShadow>
-        <boxGeometry args={[0.05, 0.68, 0.05]} />
+      <mesh position={[1.08, 0.62, 0]} castShadow>
+        <boxGeometry args={[0.08, 1.24, 0.08]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.7} metalness={0.14} />
       </mesh>
-      <mesh position={[0, 0.66, 0]} castShadow>
-        <boxGeometry args={[1.09, 0.05, 0.05]} />
+      <mesh position={[0, 1.2, 0]} castShadow>
+        <boxGeometry args={[2.22, 0.08, 0.08]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.7} metalness={0.14} />
       </mesh>
-      <mesh position={[0, 0.3, -0.36]} receiveShadow>
-        <boxGeometry args={[1.02, 0.6, 0.02]} />
+      <mesh position={[0, 0.54, -0.74]} receiveShadow>
+        <boxGeometry args={[2.1, 1.08, 0.03]} />
         <meshStandardMaterial color="#dbeafe" transparent opacity={0.24} roughness={0.95} />
       </mesh>
-      <mesh position={[-0.49, 0.3, -0.18]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
-        <boxGeometry args={[0.38, 0.6, 0.02]} />
+      <mesh position={[-1.02, 0.54, -0.37]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+        <boxGeometry args={[0.76, 1.08, 0.03]} />
         <meshStandardMaterial color="#dbeafe" transparent opacity={0.18} roughness={0.95} />
       </mesh>
-      <mesh position={[0.49, 0.3, -0.18]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
-        <boxGeometry args={[0.38, 0.6, 0.02]} />
+      <mesh position={[1.02, 0.54, -0.37]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+        <boxGeometry args={[0.76, 1.08, 0.03]} />
         <meshStandardMaterial color="#dbeafe" transparent opacity={0.18} roughness={0.95} />
       </mesh>
     </group>
