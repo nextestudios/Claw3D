@@ -17,9 +17,7 @@ import { EmptyStatePanel } from "@/features/agents/components/EmptyStatePanel";
 import {
   isHeartbeatPrompt,
 } from "@/lib/text/message-extract";
-import {
-  useGatewayConnection,
-} from "@/lib/gateway/GatewayClient";
+import { useRuntimeConnection } from "@/lib/runtime/useRuntimeConnection";
 import {
   type GatewayModelChoice,
   type GatewayModelPolicySnapshot,
@@ -233,7 +231,11 @@ const AgentsPageScreen = () => {
     useLocalGatewayDefaults,
     setGatewayUrl,
     setToken,
-  } = useGatewayConnection(settingsCoordinator);
+    supportsCapability,
+  } = useRuntimeConnection(settingsCoordinator);
+  const runtimeSupportsConfig = supportsCapability("config");
+  const runtimeSupportsModels = supportsCapability("models");
+  const runtimeSupportsCron = supportsCapability("cron");
   const {
     loaded: voiceRepliesLoaded,
     preference: voiceRepliesPreference,
@@ -472,7 +474,10 @@ const AgentsPageScreen = () => {
   const specialLatestUpdate = useMemo(() => {
     return createSpecialLatestUpdateOperation({
       callGateway: (method, params) => client.call(method, params),
-      listCronJobs: () => listCronJobs(client, { includeDisabled: true }),
+      listCronJobs: () =>
+        runtimeSupportsCron
+          ? listCronJobs(client, { includeDisabled: true })
+          : Promise.resolve({ jobs: [] }),
       resolveCronJobForAgent,
       formatCronJobDisplay,
       dispatchUpdateAgent: (agentId, patch) => {
@@ -481,7 +486,7 @@ const AgentsPageScreen = () => {
       isDisconnectLikeError: isGatewayDisconnectLikeError,
       logError: (message) => console.error(message),
     });
-  }, [client, dispatch, resolveCronJobForAgent]);
+  }, [client, dispatch, resolveCronJobForAgent, runtimeSupportsCron]);
 
   const refreshHeartbeatLatestUpdate = useCallback(() => {
     const agents = stateRef.current.agents;
@@ -547,6 +552,7 @@ const AgentsPageScreen = () => {
   const { refreshGatewayConfigSnapshot } = useGatewayConfigSyncController({
     client,
     status,
+    enabled: runtimeSupportsConfig && runtimeSupportsModels,
     settingsRouteActive,
     inspectSidebarAgentId,
     gatewayConfigSnapshot,

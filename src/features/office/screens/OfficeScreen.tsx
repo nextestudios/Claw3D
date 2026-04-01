@@ -17,11 +17,11 @@ import { useAgentStore, type AgentState } from "@/features/agents/state/store";
 import {
   GatewayClient,
   buildAgentMainSessionKey,
-  useGatewayConnection,
   type EventFrame,
   isSameSessionKey,
   parseAgentIdFromSessionKey,
 } from "@/lib/gateway/GatewayClient";
+import { useRuntimeConnection } from "@/lib/runtime/useRuntimeConnection";
 import {
   createStudioSettingsCoordinator,
   type StudioSettingsLoadOptions,
@@ -847,8 +847,13 @@ export function OfficeScreen({
     useLocalGatewayDefaults,
     setGatewayUrl,
     setToken,
+    supportsCapability,
   } =
-    useGatewayConnection(settingsCoordinator);
+    useRuntimeConnection(settingsCoordinator);
+  const runtimeSupportsSkills = supportsCapability("skills");
+  const runtimeSupportsApprovals = supportsCapability("approvals");
+  const runtimeSupportsCron = supportsCapability("cron");
+  const runtimeSupportsRunLifecycle = supportsCapability("runtime-agent-events");
   const { state, dispatch, hydrateAgents, setError, setLoading } =
     useAgentStore();
   const [agentsLoaded, setAgentsLoaded] = useState(false);
@@ -2676,7 +2681,12 @@ export function OfficeScreen({
     setAgentEditorAgentId(null);
   }, [agentEditorAgentId, state.agents]);
 
-  const runLog = useRunLog({ client, status, agents: state.agents });
+  const runLog = useRunLog({
+    client,
+    status,
+    enabled: runtimeSupportsRunLifecycle,
+    agents: state.agents,
+  });
   const standupAgentSnapshots = useMemo<StandupAgentSnapshot[]>(
     () =>
       state.agents.map((agent) => ({
@@ -2696,6 +2706,7 @@ export function OfficeScreen({
     settingsCoordinator,
     client,
     status,
+    cronEnabled: runtimeSupportsCron,
     agents: state.agents,
     runLog,
     standup: standupController,
@@ -2723,6 +2734,7 @@ export function OfficeScreen({
   const marketplace = useOfficeSkillsMarketplace({
     client,
     status,
+    enabled: runtimeSupportsSkills,
     agents: state.agents,
     preferredAgentId: selectedLocalChatAgentId,
     onSkillActivityStart: handleMarketplaceGymStart,
@@ -2731,6 +2743,7 @@ export function OfficeScreen({
   const skillTriggers = useOfficeSkillTriggers({
     client,
     status,
+    enabled: runtimeSupportsSkills,
     agents: state.agents,
   });
   const animationNowMs = Date.now();
@@ -4487,6 +4500,7 @@ export function OfficeScreen({
             <PlaybooksPanel
               client={client}
               status={status}
+              cronEnabled={runtimeSupportsCron}
               agents={state.agents}
               standup={standupController}
             />
@@ -4495,6 +4509,7 @@ export function OfficeScreen({
             <AnalyticsPanel
               client={client}
               status={status}
+              approvalsEnabled={runtimeSupportsApprovals}
               agents={state.agents}
               runLog={runLog}
               gatewayUrl={gatewayUrl}
