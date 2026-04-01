@@ -1402,6 +1402,8 @@ const AgentsPageScreen = () => {
                   <ConnectionPanel
                     gatewayUrl={gatewayUrl}
                     token={token}
+                    localGatewayUrl={localGatewayDefaults?.url ?? null}
+                    localGatewayToken={localGatewayDefaults?.token ?? null}
                     status={status}
                     error={gatewayError}
                     onGatewayUrlChange={setGatewayUrl}
@@ -1468,6 +1470,8 @@ const AgentsPageScreen = () => {
                 <ConnectionPanel
                   gatewayUrl={gatewayUrl}
                   token={token}
+                  localGatewayUrl={localGatewayDefaults?.url ?? null}
+                  localGatewayToken={localGatewayDefaults?.token ?? null}
                   status={status}
                   error={gatewayError}
                   onGatewayUrlChange={setGatewayUrl}

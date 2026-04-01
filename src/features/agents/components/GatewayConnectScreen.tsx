@@ -51,6 +51,25 @@ export const GatewayConnectScreen = ({
     () => `pnpm openclaw gateway run --bind loopback --port ${localPort} --verbose`,
     [localPort]
   );
+  const localDemoCommand = useMemo(
+    () => `npm run demo-gateway`,
+    []
+  );
+  const useDemoPreset = () => {
+    onGatewayUrlChange("ws://localhost:18789");
+    onTokenChange("");
+  };
+  const useHermesPreset = () => {
+    onGatewayUrlChange("ws://localhost:18789");
+    onTokenChange("");
+  };
+  const useOpenClawPreset = () => {
+    if (localGatewayDefaults) {
+      onUseLocalDefaults();
+      return;
+    }
+    onGatewayUrlChange("ws://localhost:18789");
+  };
   const statusCopy = useMemo(() => {
     if (status === "connecting" && isLocal) {
       return `Local gateway detected on port ${localPort}. Connecting…`;
@@ -209,6 +228,29 @@ export const GatewayConnectScreen = ({
             Remote gateway (recommended)
           </p>
           <p className="mt-2 text-sm text-foreground/90">Default: enter your URL and token to connect.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              onClick={useDemoPreset}
+            >
+              Use Demo
+            </button>
+            <button
+              type="button"
+              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              onClick={useHermesPreset}
+            >
+              Use Hermes
+            </button>
+            <button
+              type="button"
+              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              onClick={useOpenClawPreset}
+            >
+              Use OpenClaw
+            </button>
+          </div>
         </div>
         {remoteForm}
       </div>
@@ -224,6 +266,21 @@ export const GatewayConnectScreen = ({
         </div>
         <div className="mt-3 space-y-3">
           {commandField}
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-3">
+            <p className="text-xs font-medium text-foreground">Just want to see the office?</p>
+            <p className="mt-1 text-xs leading-snug text-muted-foreground">
+              Run <span className="font-mono text-foreground">{localDemoCommand}</span> to start a built-in mock gateway with demo agents.
+              No OpenClaw or Hermes required.
+            </p>
+          </div>
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-3">
+            <p className="text-xs font-medium text-foreground">Using Hermes locally?</p>
+            <p className="mt-1 text-xs leading-snug text-muted-foreground">
+              Run <span className="font-mono text-foreground">npm run hermes-adapter</span>, then choose
+              <span className="font-mono text-foreground"> Use Hermes</span>. The default local URL is
+              <span className="font-mono text-foreground"> ws://localhost:18789</span>.
+            </p>
+          </div>
           {localGatewayDefaults ? (
             <div className="ui-input rounded-md px-3 py-3">
               <div className="space-y-2">

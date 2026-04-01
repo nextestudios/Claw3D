@@ -179,7 +179,7 @@ const sessionSettings = new Map();
 /** @type {Map<string, string>} agentId/filename → content */
 const agentFiles = new Map();
 
-/** @type {Map<string, {abort: () => void}>} runId → abort handle */
+/** @type {Map<string, {runId: string, sessionKey: string, agentId: string, abort: () => void}>} runId → abort handle */
 const activeRuns = new Map();
 
 /** @type {Map<string, object>} jobId → CronJobSummary */
@@ -256,6 +256,11 @@ function appendHistory(sessionKey, userMsg, assistantMsg) {
   const history = getHistory(sessionKey);
   history.push({ role: "user", content: userMsg });
   history.push({ role: "assistant", content: assistantMsg });
+  saveHistoryToDisk();
+}
+
+function clearHistory(sessionKey) {
+  conversationHistory.delete(sessionKey);
   saveHistoryToDisk();
 }
 
@@ -516,7 +521,7 @@ function execDismissAgent(args) {
   const agent = agentRegistry.get(targetId);
   if (!agent) return JSON.stringify({ ok: false, error: `Agent ${targetId} not found` });
   agentRegistry.delete(targetId);
-  conversationHistory.delete(`agent:${targetId}:${MAIN_KEY}`);
+  clearHistory(`agent:${targetId}:${MAIN_KEY}`);
   console.log(`[hermes-adapter] Dismissed agent: ${agent.name} (${targetId})`);
   return JSON.stringify({ ok: true, dismissed: targetId });
 }
@@ -667,7 +672,7 @@ async function handleMethod(method, params, id, sendEvent) {
       const delId = typeof p.agentId === "string" ? p.agentId : "";
       if (delId && delId !== AGENT_ID) {
         agentRegistry.delete(delId);
-        conversationHistory.delete(`agent:${delId}:${MAIN_KEY}`);
+        clearHistory(`agent:${delId}:${MAIN_KEY}`);
       }
       return resOk(id, { ok: true, removedBindings: 0 });
     }
@@ -757,7 +762,7 @@ async function handleMethod(method, params, id, sendEvent) {
 
     case "sessions.reset": {
       const key = typeof p.key === "string" ? p.key : MAIN_SESSION_KEY;
-      conversationHistory.delete(key);
+      clearHistory(key);
       return resOk(id, { ok: true });
     }
 
@@ -776,7 +781,12 @@ async function handleMethod(method, params, id, sendEvent) {
       const isOrchestrator = sessionAgentId === AGENT_ID;
 
       let aborted = false;
-      activeRuns.set(runId, { abort() { aborted = true; } });
+      activeRuns.set(runId, {
+        runId,
+        sessionKey,
+        agentId: sessionAgentId,
+        abort() { aborted = true; },
+      });
 
       setImmediate(async () => {
         const model = (sessionSettings.get(sessionKey) || {}).model
@@ -823,9 +833,25 @@ async function handleMethod(method, params, id, sendEvent) {
     }
 
     case "chat.abort": {
-      for (const [, handle] of activeRuns) handle.abort();
-      activeRuns.clear();
-      return resOk(id, { ok: true });
+      const runId = typeof p.runId === "string" ? p.runId.trim() : "";
+      const sessionKey = typeof p.sessionKey === "string" ? p.sessionKey.trim() : "";
+      let aborted = 0;
+      if (runId) {
+        const handle = activeRuns.get(runId);
+        if (handle) {
+          handle.abort();
+          activeRuns.delete(runId);
+          aborted += 1;
+        }
+      } else if (sessionKey) {
+        for (const [activeRunId, handle] of activeRuns.entries()) {
+          if (handle.sessionKey !== sessionKey) continue;
+          handle.abort();
+          activeRuns.delete(activeRunId);
+          aborted += 1;
+        }
+      }
+      return resOk(id, { ok: true, aborted });
     }
 
     case "chat.history": {

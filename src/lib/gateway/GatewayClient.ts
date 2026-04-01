@@ -419,14 +419,30 @@ export const syncGatewaySessionSettings = async ({
 const doctorFixHint =
   "Run `npx openclaw doctor --fix` on the gateway host (or `pnpm openclaw doctor --fix` in a source checkout).";
 
+const protocolMismatchHint =
+  "This gateway looks too old for Claw3D's protocol v3. Upgrade OpenClaw, use the Hermes adapter, or run `npm run demo-gateway` for a no-framework office demo.";
+
+const isGatewayProtocolMismatchError = (error: GatewayResponseError) => {
+  if (error.code.trim().toUpperCase() !== "INVALID_REQUEST") return false;
+  const message = error.message.trim();
+  if (!message) return false;
+  return /minProtocol|maxProtocol/i.test(message);
+};
+
 const formatGatewayError = (error: unknown) => {
   if (error instanceof GatewayResponseError) {
+    if (isGatewayProtocolMismatchError(error)) {
+      return `Gateway error (${error.code}): ${error.message}. ${protocolMismatchHint}`;
+    }
     if (error.code === "INVALID_REQUEST" && /invalid config/i.test(error.message)) {
       return `Gateway error (${error.code}): ${error.message}. ${doctorFixHint}`;
     }
     return `Gateway error (${error.code}): ${error.message}`;
   }
   if (error instanceof Error) {
+    if (/timed out connecting to the gateway/i.test(error.message)) {
+      return `${error.message} If you are testing locally, an older OpenClaw build may be speaking an incompatible protocol. Try upgrading OpenClaw, using the Hermes adapter, or running \`npm run demo-gateway\`.`;
+    }
     return error.message;
   }
   return "Unknown gateway error.";

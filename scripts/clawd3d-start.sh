@@ -2,14 +2,15 @@
 # clawd3d-start — Start all Clawd3D services, auto-resolving port conflicts.
 #
 # Setup (once):
-#   echo 'alias clawd3d="$HOME/Documents/Github/clawd3d/scripts/clawd3d-start.sh"' >> ~/.zshrc
+#   echo 'alias clawd3d="/absolute/path/to/Claw3D/scripts/clawd3d-start.sh"' >> ~/.zshrc
 #   source ~/.zshrc
 #
 # Then just run:  clawd3d
 
 set -euo pipefail
 
-CLAWD3D_DIR="$HOME/Documents/Github/clawd3d"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+CLAWD3D_DIR="$(cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 LOG_DIR="/tmp/clawd3d-logs"
 mkdir -p "$LOG_DIR"
 

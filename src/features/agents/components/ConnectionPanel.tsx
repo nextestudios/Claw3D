@@ -5,6 +5,8 @@ import { resolveGatewayStatusBadgeClass, resolveGatewayStatusLabel } from "./col
 type ConnectionPanelProps = {
   gatewayUrl: string;
   token: string;
+  localGatewayUrl?: string | null;
+  localGatewayToken?: string | null;
   status: GatewayStatus;
   error: string | null;
   onGatewayUrlChange: (value: string) => void;
@@ -17,6 +19,8 @@ type ConnectionPanelProps = {
 export const ConnectionPanel = ({
   gatewayUrl,
   token,
+  localGatewayUrl = null,
+  localGatewayToken = null,
   status,
   error,
   onGatewayUrlChange,
@@ -27,6 +31,18 @@ export const ConnectionPanel = ({
 }: ConnectionPanelProps) => {
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
+  const applyDemoPreset = () => {
+    onGatewayUrlChange("ws://localhost:18789");
+    onTokenChange("");
+  };
+  const applyHermesPreset = () => {
+    onGatewayUrlChange("ws://localhost:18789");
+    onTokenChange("");
+  };
+  const applyOpenClawPreset = () => {
+    onGatewayUrlChange(localGatewayUrl?.trim() || "ws://localhost:18789");
+    onTokenChange(localGatewayToken?.trim() || "");
+  };
 
   return (
     <div className="fade-up-delay flex flex-col gap-3">
@@ -83,6 +99,29 @@ export const ConnectionPanel = ({
             spellCheck={false}
           />
         </label>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+          type="button"
+          onClick={applyDemoPreset}
+        >
+          Demo preset
+        </button>
+        <button
+          className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+          type="button"
+          onClick={applyHermesPreset}
+        >
+          Hermes preset
+        </button>
+        <button
+          className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+          type="button"
+          onClick={applyOpenClawPreset}
+        >
+          OpenClaw preset
+        </button>
       </div>
       {error ? (
         <p className="ui-alert-danger rounded-md px-4 py-2 text-sm">
