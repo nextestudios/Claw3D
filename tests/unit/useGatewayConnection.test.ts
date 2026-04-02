@@ -45,7 +45,7 @@ const setupAndImportHook = async (gatewayUrl: string | null) => {
 
       start() {
         this.connected = true;
-        this.opts.onHello?.({ type: "hello-ok", protocol: 1 });
+        this.opts.onHello?.({ type: "hello-ok", protocol: 1, adapterType: "openclaw" });
       }
 
       stop() {
@@ -73,8 +73,18 @@ const setupAndImportHook = async (gatewayUrl: string | null) => {
     }) => {
       gatewayUrl: string;
       token: string;
-      localGatewayDefaults: { url: string; token: string } | null;
+      selectedAdapterType: "openclaw" | "hermes" | "demo" | "custom";
+      detectedAdapterType: "openclaw" | "hermes" | "demo" | "custom" | null;
+      activeAdapterType: "openclaw" | "hermes" | "demo" | "custom";
+      localGatewayDefaults: {
+        url: string;
+        token: string;
+        adapterType: "openclaw" | "hermes" | "demo" | "custom";
+      } | null;
+      shouldPromptForConnect: boolean;
       useLocalGatewayDefaults: () => void;
+      setSelectedAdapterType: (value: "openclaw" | "hermes" | "demo" | "custom") => void;
+      connect: () => Promise<void>;
     },
     captured,
   };
@@ -136,6 +146,30 @@ describe("useGatewayConnection", () => {
     const { useGatewayConnection, captured } = await setupAndImportHook(null);
     const coordinator = {
       loadSettings: async () => null,
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: {
+            url: "wss://remote.example",
+            token: "",
+            adapterType: "hermes",
+            lastKnownGood: {
+              url: "wss://remote.example",
+              token: "",
+              adapterType: "hermes",
+            },
+          },
+          focused: {},
+          avatars: {},
+          analytics: {},
+          voiceReplies: {},
+          office: {},
+          deskAssignments: {},
+          standup: {},
+          taskBoard: {},
+        },
+        localGatewayDefaults: null,
+      }),
       schedulePatch: () => {},
       flushPending: async () => {},
     };
@@ -151,7 +185,76 @@ describe("useGatewayConnection", () => {
       expect(captured.url).toBe("ws://localhost:3000/api/gateway/ws");
     });
     expect(captured.token).toBe("");
-    expect(captured.authScopeKey).toBe("ws://localhost:18789");
+    expect(captured.authScopeKey).toBe("wss://remote.example");
+  });
+
+  it("does_not_auto_connect_without_a_last_known_good_state", async () => {
+    const { useGatewayConnection, captured } = await setupAndImportHook(null);
+    const coordinator = {
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: {
+            url: "ws://localhost:18789",
+            token: "",
+            adapterType: "hermes",
+          },
+          focused: {},
+          avatars: {},
+          analytics: {},
+          voiceReplies: {},
+          office: {},
+          deskAssignments: {},
+          standup: {},
+          taskBoard: {},
+        },
+        localGatewayDefaults: null,
+      }),
+      loadSettings: async () => null,
+      schedulePatch: () => {},
+      flushPending: async () => {},
+    };
+
+    const Probe = () => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        null,
+        createElement("div", { "data-testid": "gatewayUrl" }, state.gatewayUrl),
+        createElement(
+          "div",
+          { "data-testid": "shouldPromptForConnect" },
+          state.shouldPromptForConnect ? "yes" : "no"
+        )
+      );
+    };
+
+    render(createElement(Probe));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("gatewayUrl")).toHaveTextContent("ws://localhost:18789");
+    });
+    expect(screen.getByTestId("shouldPromptForConnect")).toHaveTextContent("yes");
+    expect(captured.url).toBeNull();
+  });
+
+  it("uses_a_small_initial_auto_connect_delay_for_hermes_and_demo_only", async () => {
+    const mod = await import("@/lib/gateway/GatewayClient");
+    expect(mod.resolveInitialGatewayAutoConnectDelayMs("openclaw")).toBe(0);
+    expect(mod.resolveInitialGatewayAutoConnectDelayMs("custom")).toBe(0);
+    expect(mod.resolveInitialGatewayAutoConnectDelayMs("hermes")).toBe(900);
+    expect(mod.resolveInitialGatewayAutoConnectDelayMs("demo")).toBe(900);
+  });
+
+  it("retries_only_the_first_connect_for_hermes_and_demo", async () => {
+    const mod = await import("@/lib/gateway/GatewayClient");
+    expect(mod.resolveInitialGatewayConnectAttemptCount("openclaw", false)).toBe(1);
+    expect(mod.resolveInitialGatewayConnectAttemptCount("custom", false)).toBe(1);
+    expect(mod.resolveInitialGatewayConnectAttemptCount("hermes", false)).toBe(2);
+    expect(mod.resolveInitialGatewayConnectAttemptCount("demo", false)).toBe(2);
+    expect(mod.resolveInitialGatewayConnectAttemptCount("hermes", true)).toBe(2);
+    expect(mod.resolveInitialGatewayConnectAttemptCount("demo", true)).toBe(2);
+    expect(mod.resolveInitialGatewayConnectAttemptCount("openclaw", true)).toBe(1);
   });
 
   it("auto_applies_runtime_local_defaults_when_no_saved_gateway_and_build_time_empty", async () => {
@@ -268,5 +371,367 @@ describe("useGatewayConnection", () => {
       expect(screen.getByTestId("gatewayUrl")).toHaveTextContent("ws://localhost:18789");
     });
     expect(screen.getByTestId("token")).toHaveTextContent("local-token");
+  });
+
+  it("loads_and_persists_selected_adapter_type", async () => {
+    const { useGatewayConnection } = await setupAndImportHook(null);
+    const patches: unknown[] = [];
+    const coordinator = {
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: {
+            url: "ws://localhost:18789",
+            token: "",
+            adapterType: "hermes",
+          },
+          focused: {},
+          avatars: {},
+          analytics: {},
+          voiceReplies: {},
+          office: {},
+          deskAssignments: {},
+          standup: {},
+          taskBoard: {},
+        },
+        localGatewayDefaults: null,
+      }),
+      loadSettings: async () => null,
+      schedulePatch: (patch: unknown) => {
+        patches.push(patch);
+      },
+      flushPending: async () => {},
+    };
+
+    const Probe = () => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        null,
+        createElement("div", { "data-testid": "selectedAdapterType" }, state.selectedAdapterType),
+        createElement("div", { "data-testid": "activeAdapterType" }, state.activeAdapterType)
+      );
+    };
+
+    render(createElement(Probe));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("selectedAdapterType")).toHaveTextContent("hermes");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("activeAdapterType")).toHaveTextContent("hermes");
+    });
+    expect(patches).toEqual([]);
+  });
+
+  it("prefers_the_saved_selected_adapter_over_a_different_last_known_good_backend", async () => {
+    const { useGatewayConnection, captured } = await setupAndImportHook(null);
+    const coordinator = {
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: {
+            url: "ws://localhost:18789",
+            token: "",
+            adapterType: "hermes",
+            lastKnownGood: {
+              url: "ws://localhost:9999",
+              token: "openclaw-token",
+              adapterType: "openclaw",
+            },
+          },
+          focused: {},
+          avatars: {},
+          analytics: {},
+          voiceReplies: {},
+          office: {},
+          deskAssignments: {},
+          standup: {},
+          taskBoard: {},
+        },
+        localGatewayDefaults: null,
+      }),
+      loadSettings: async () => null,
+      schedulePatch: () => {},
+      flushPending: async () => {},
+    };
+
+    const Probe = () => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        null,
+        createElement("div", { "data-testid": "gatewayUrl" }, state.gatewayUrl),
+        createElement("div", { "data-testid": "selectedAdapterType" }, state.selectedAdapterType),
+        createElement(
+          "div",
+          { "data-testid": "shouldPromptForConnect" },
+          state.shouldPromptForConnect ? "yes" : "no"
+        )
+      );
+    };
+
+    render(createElement(Probe));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("gatewayUrl")).toHaveTextContent("ws://localhost:18789");
+    });
+    expect(screen.getByTestId("selectedAdapterType")).toHaveTextContent("hermes");
+    expect(screen.getByTestId("shouldPromptForConnect")).toHaveTextContent("yes");
+    expect(captured.url).toBeNull();
+  });
+
+  it("loads_custom_adapter_type_without_requiring_a_token", async () => {
+    const { useGatewayConnection } = await setupAndImportHook(null);
+    const coordinator = {
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: {
+            url: "http://127.0.0.1:7770",
+            token: "",
+            adapterType: "custom",
+          },
+          focused: {},
+          avatars: {},
+          analytics: {},
+          voiceReplies: {},
+          office: {},
+          deskAssignments: {},
+          standup: {},
+          taskBoard: {},
+        },
+        localGatewayDefaults: null,
+      }),
+      loadSettings: async () => null,
+      schedulePatch: () => {},
+      flushPending: async () => {},
+    };
+
+    const Probe = () => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        null,
+        createElement("div", { "data-testid": "gatewayUrl" }, state.gatewayUrl),
+        createElement("div", { "data-testid": "selectedAdapterType" }, state.selectedAdapterType),
+        createElement("div", { "data-testid": "activeAdapterType" }, state.activeAdapterType),
+        createElement(
+          "div",
+          { "data-testid": "shouldPromptForConnect" },
+          state.shouldPromptForConnect ? "yes" : "no"
+        )
+      );
+    };
+
+    render(createElement(Probe));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("gatewayUrl")).toHaveTextContent("http://127.0.0.1:7770");
+    });
+    expect(screen.getByTestId("selectedAdapterType")).toHaveTextContent("custom");
+    expect(screen.getByTestId("activeAdapterType")).toHaveTextContent("custom");
+    expect(screen.getByTestId("shouldPromptForConnect")).toHaveTextContent("yes");
+  });
+
+  it("still_prompts_to_reconnect_for_custom_with_last_known_good_state", async () => {
+    const { useGatewayConnection } = await setupAndImportHook(null);
+    const coordinator = {
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: {
+            url: "http://127.0.0.1:7770",
+            token: "",
+            adapterType: "custom",
+            lastKnownGood: {
+              url: "http://127.0.0.1:7770",
+              token: "",
+              adapterType: "custom",
+            },
+          },
+          focused: {},
+          avatars: {},
+          analytics: {},
+          voiceReplies: {},
+          office: {},
+          deskAssignments: {},
+          standup: {},
+          taskBoard: {},
+        },
+        localGatewayDefaults: null,
+      }),
+      loadSettings: async () => null,
+      schedulePatch: () => {},
+      flushPending: async () => {},
+    };
+
+    const Probe = () => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        null,
+        createElement("div", { "data-testid": "selectedAdapterType" }, state.selectedAdapterType),
+        createElement(
+          "div",
+          { "data-testid": "shouldPromptForConnect" },
+          state.shouldPromptForConnect ? "yes" : "no"
+        )
+      );
+    };
+
+    render(createElement(Probe));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("selectedAdapterType")).toHaveTextContent("custom");
+    });
+    expect(screen.getByTestId("shouldPromptForConnect")).toHaveTextContent("yes");
+  });
+
+  it("persists_the_detected_backend_identity_in_last_known_good", async () => {
+    const { useGatewayConnection } = await setupAndImportHook(null);
+    const patches: unknown[] = [];
+    const coordinator = {
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: {
+            url: "wss://remote.example",
+            token: "",
+            adapterType: "hermes",
+            lastKnownGood: {
+              url: "wss://remote.example",
+              token: "",
+              adapterType: "hermes",
+            },
+          },
+          focused: {},
+          avatars: {},
+          analytics: {},
+          voiceReplies: {},
+          office: {},
+          deskAssignments: {},
+          standup: {},
+          taskBoard: {},
+        },
+        localGatewayDefaults: null,
+      }),
+      loadSettings: async () => null,
+      schedulePatch: (patch: unknown) => {
+        patches.push(patch);
+      },
+      flushPending: async () => {},
+    };
+
+    const Probe = () => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        null,
+        createElement("div", { "data-testid": "selectedAdapterType" }, state.selectedAdapterType),
+        createElement(
+          "button",
+          {
+            type: "button",
+            "data-testid": "connect",
+            onClick: () => {
+              void state.connect();
+            },
+          },
+          "connect"
+        )
+      );
+    };
+
+    render(createElement(Probe));
+    await waitFor(() => {
+      expect(screen.getByTestId("selectedAdapterType")).toHaveTextContent("hermes");
+    });
+    fireEvent.click(screen.getByTestId("connect"));
+
+    await waitFor(() => {
+      expect(
+        patches.some(
+          (patch) =>
+            typeof patch === "object" &&
+            patch !== null &&
+            "gateway" in patch &&
+            typeof (patch as { gateway?: { lastKnownGood?: { adapterType?: string } } }).gateway
+              ?.lastKnownGood?.adapterType === "string"
+        )
+      ).toBe(true);
+    });
+
+    expect(patches).toContainEqual({
+      gateway: {
+        lastKnownGood: {
+          url: "wss://remote.example",
+          token: "",
+          adapterType: "openclaw",
+        },
+      },
+    });
+  });
+
+  it("restores_backend_specific_profiles_when_switching_adapter_type", async () => {
+    const { useGatewayConnection } = await setupAndImportHook(null);
+    const coordinator = {
+      loadSettingsEnvelope: async () => ({
+        settings: {
+          version: 1,
+          gateway: {
+            url: "ws://localhost:18789",
+            token: "",
+            adapterType: "hermes",
+            profiles: {
+              hermes: { url: "ws://localhost:18789", token: "" },
+              custom: { url: "http://127.0.0.1:7770", token: "" },
+            },
+          },
+          focused: {},
+          avatars: {},
+          analytics: {},
+          voiceReplies: {},
+          office: {},
+          deskAssignments: {},
+          standup: {},
+          taskBoard: {},
+        },
+        localGatewayDefaults: null,
+      }),
+      loadSettings: async () => null,
+      schedulePatch: () => {},
+      flushPending: async () => {},
+    };
+
+    const Probe = () => {
+      const state = useGatewayConnection(coordinator);
+      return createElement(
+        "div",
+        null,
+        createElement("div", { "data-testid": "gatewayUrl" }, state.gatewayUrl),
+        createElement(
+          "button",
+          {
+            type: "button",
+            "data-testid": "switch-custom",
+            onClick: () => state.setSelectedAdapterType("custom"),
+          },
+          "custom"
+        )
+      );
+    };
+
+    render(createElement(Probe));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("gatewayUrl")).toHaveTextContent("ws://localhost:18789");
+    });
+
+    fireEvent.click(screen.getByTestId("switch-custom"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("gatewayUrl")).toHaveTextContent("http://127.0.0.1:7770");
+    });
   });
 });
