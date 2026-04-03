@@ -33,5 +33,37 @@ describe("resolveGatewayAutoRetryDelayMs", () => {
 
     expect(delay).toBeNull();
   });
+
+  it("does not retry when the upstream websocket handshake times out", () => {
+    const delay = resolveGatewayAutoRetryDelayMs({
+      status: "disconnected",
+      didAutoConnect: true,
+      hasConnectedOnce: true,
+      wasManualDisconnect: false,
+      gatewayUrl: "wss://remote.example",
+      errorMessage:
+        "Gateway error (studio.upstream_timeout): Timed out connecting Studio to the upstream gateway WebSocket.",
+      connectErrorCode: "studio.upstream_timeout",
+      attempt: 0,
+    });
+
+    expect(delay).toBeNull();
+  });
+
+  it("does not retry when the upstream gateway explicitly rejects pairing", () => {
+    const delay = resolveGatewayAutoRetryDelayMs({
+      status: "disconnected",
+      didAutoConnect: true,
+      hasConnectedOnce: true,
+      wasManualDisconnect: false,
+      gatewayUrl: "wss://remote.example",
+      errorMessage:
+        "Gateway error (studio.upstream_rejected): Upstream gateway rejected connect (1008): pairing required.",
+      connectErrorCode: "studio.upstream_rejected",
+      attempt: 0,
+    });
+
+    expect(delay).toBeNull();
+  });
 });
 

@@ -1,6 +1,8 @@
 const { Buffer } = require("node:buffer");
 const { WebSocket, WebSocketServer } = require("ws");
 
+const DEFAULT_UPSTREAM_HANDSHAKE_TIMEOUT_MS = 10_000;
+
 /** Maximum frame payload size (256 KB). */
 const MAX_FRAME_SIZE = 256 * 1024;
 
@@ -29,11 +31,17 @@ const safeJsonParse = (raw) => {
 /** Per-connection frame rate limiter. */
 const createFrameRateLimiter = (maxPerSecond = MAX_FRAMES_PER_SECOND) => {
   let count = 0;
-  const interval = setInterval(() => { count = 0; }, 1000);
+  const interval = setInterval(() => {
+    count = 0;
+  }, 1000);
   interval.unref();
   return {
-    check() { return ++count <= maxPerSecond; },
-    destroy() { clearInterval(interval); },
+    check() {
+      return ++count <= maxPerSecond;
+    },
+    destroy() {
+      clearInterval(interval);
+    },
   };
 };
 
@@ -125,6 +133,7 @@ function createGatewayProxy(options) {
     allowWs = (req) => resolvePathname(req.url) === "/api/gateway/ws",
     log = () => {},
     logError = (msg, err) => console.error(msg, err),
+    upstreamHandshakeTimeoutMs = DEFAULT_UPSTREAM_HANDSHAKE_TIMEOUT_MS,
   } = options || {};
 
   const { verifyClient } = options || {};
@@ -147,10 +156,16 @@ function createGatewayProxy(options) {
     let pendingUpstreamSetupError = null;
     let closed = false;
     const frameRateLimiter = createFrameRateLimiter();
+    let upstreamHandshakeTimeoutId = null;
+
     const closeBoth = (code, reason) => {
       if (closed) return;
       closed = true;
       frameRateLimiter.destroy();
+      if (upstreamHandshakeTimeoutId !== null) {
+        clearTimeout(upstreamHandshakeTimeoutId);
+        upstreamHandshakeTimeoutId = null;
+      }
       try {
         browserWs.close(code, reason);
       } catch {}
@@ -251,9 +266,30 @@ function createGatewayProxy(options) {
         return;
       }
 
-      upstreamWs = new WebSocket(upstreamUrl, { origin: upstreamOrigin });
+      upstreamWs = new WebSocket(upstreamUrl, {
+        origin: upstreamOrigin,
+        handshakeTimeout: upstreamHandshakeTimeoutMs,
+      });
+
+      upstreamHandshakeTimeoutId = setTimeout(() => {
+        const timeoutError = {
+          code: "studio.upstream_timeout",
+          message: "Timed out connecting Studio to the upstream gateway WebSocket.",
+        };
+        pendingUpstreamSetupError = timeoutError;
+        try {
+          upstreamWs?.terminate();
+        } catch {}
+        if (connectRequestId) {
+          sendConnectError(timeoutError.code, timeoutError.message);
+        }
+      }, upstreamHandshakeTimeoutMs);
 
       upstreamWs.on("open", () => {
+        if (upstreamHandshakeTimeoutId !== null) {
+          clearTimeout(upstreamHandshakeTimeoutId);
+          upstreamHandshakeTimeoutId = null;
+        }
         upstreamReady = true;
         maybeForwardPendingConnect();
       });
@@ -271,22 +307,60 @@ function createGatewayProxy(options) {
         }
       });
 
-      upstreamWs.on("close", (ev) => {
-        const reason = typeof ev?.reason === "string" ? ev.reason : "";
+      upstreamWs.on("close", (code, reasonBuffer) => {
+        if (upstreamHandshakeTimeoutId !== null) {
+          clearTimeout(upstreamHandshakeTimeoutId);
+          upstreamHandshakeTimeoutId = null;
+        }
+        const reason =
+          typeof reasonBuffer === "string"
+            ? reasonBuffer
+            : Buffer.isBuffer(reasonBuffer)
+              ? reasonBuffer.toString()
+              : "";
+        if (!connectRequestId) {
+          pendingUpstreamSetupError ||= {
+            code: "studio.upstream_closed",
+            message: `Upstream gateway closed (${code}): ${reason}`,
+          };
+          return;
+        }
         if (!connectResponseSent && connectRequestId) {
+          connectResponseSent = true;
           sendToBrowser(
             buildErrorResponse(
               connectRequestId,
-              "studio.upstream_closed",
-              `Upstream gateway closed (${ev.code}): ${reason}`
+              code === 1008 ? "studio.upstream_rejected" : "studio.upstream_closed",
+              code === 1008
+                ? `Upstream gateway rejected connect (${code}): ${reason || "no reason provided"}`
+                : `Upstream gateway closed (${code}): ${reason}`
             )
           );
+          return;
         }
         closeBoth(1012, "upstream closed");
       });
 
       upstreamWs.on("error", (err) => {
+        if (upstreamHandshakeTimeoutId !== null) {
+          clearTimeout(upstreamHandshakeTimeoutId);
+          upstreamHandshakeTimeoutId = null;
+        }
         logError("Upstream gateway WebSocket error.", err);
+        if (!connectRequestId) {
+          pendingUpstreamSetupError ||= {
+            code: "studio.upstream_error",
+            message: "Failed to connect to upstream gateway WebSocket.",
+          };
+          return;
+        }
+        if (
+          pendingUpstreamSetupError?.code === "studio.upstream_timeout" &&
+          pendingUpstreamSetupError?.message
+        ) {
+          sendConnectError(pendingUpstreamSetupError.code, pendingUpstreamSetupError.message);
+          return;
+        }
         sendConnectError(
           "studio.upstream_error",
           "Failed to connect to upstream gateway WebSocket."
@@ -331,6 +405,15 @@ function createGatewayProxy(options) {
           return;
         }
         connectRequestId = id;
+        const params = isObject(parsed.params) ? parsed.params : null;
+        const client = params && isObject(params.client) ? params.client : null;
+        log(
+          `[gateway-proxy] connect frame client.id=${
+            typeof client?.id === "string" ? client.id : "n/a"
+          } client.mode=${
+            typeof client?.mode === "string" ? client.mode : "n/a"
+          } hasToken=${hasNonEmptyToken(params)} hasDevice=${hasCompleteDeviceAuth(params)}`
+        );
         if (pendingUpstreamSetupError) {
           sendConnectError(pendingUpstreamSetupError.code, pendingUpstreamSetupError.message);
           return;

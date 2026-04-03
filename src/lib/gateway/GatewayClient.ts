@@ -20,6 +20,7 @@ import type {
 } from "@/lib/studio/coordinator";
 import { resolveStudioProxyGatewayUrl } from "@/lib/gateway/proxy-url";
 import { ensureGatewayReloadModeHotForLocalStudio } from "@/lib/gateway/gatewayReloadMode";
+import { isLocalGatewayUrl } from "@/lib/gateway/local-gateway";
 import { GatewayResponseError } from "@/lib/gateway/errors";
 
 const gatewayDebugEnabled = process.env.NODE_ENV !== "production";
@@ -117,9 +118,23 @@ const DEFAULT_UPSTREAM_GATEWAY_URL =
 const DEFAULT_CUSTOM_RUNTIME_URL = "http://localhost:7770";
 const INITIAL_AUTO_CONNECT_DELAY_MS = 900;
 const INITIAL_CONNECT_RETRY_DELAY_MS = 1_200;
+const OPENCLAW_CONTROL_UI_CLIENT_ID = "openclaw-control-ui";
+const OPENCLAW_WEBCHAT_UI_CLIENT_ID = "webchat-ui";
 
 const isAutoManagedAdapter = (adapterType: StudioGatewayAdapterType) =>
   adapterType !== "custom";
+
+export const resolveGatewayClientName = (
+  adapterType: StudioGatewayAdapterType,
+  gatewayUrl: string
+) => {
+  if (adapterType !== "openclaw") {
+    return OPENCLAW_CONTROL_UI_CLIENT_ID;
+  }
+  return isLocalGatewayUrl(gatewayUrl)
+    ? OPENCLAW_CONTROL_UI_CLIENT_ID
+    : OPENCLAW_WEBCHAT_UI_CLIENT_ID;
+};
 
 export const resolveInitialGatewayAutoConnectDelayMs = (
   adapterType: StudioGatewayAdapterType
@@ -526,6 +541,15 @@ const doctorFixHint =
 const protocolMismatchHint =
   "This gateway looks too old for Claw3D's protocol v3. Upgrade OpenClaw, use the Hermes adapter, or run `npm run demo-gateway` for a no-framework office demo.";
 
+const tailscaleGatewayHint =
+  "If this is a remote OpenClaw/Tailscale gateway, confirm the Studio host can reach the `wss://...` address and approve the first device pairing on the gateway host with `openclaw devices approve --latest`.";
+
+const pairingRequiredHint =
+  "This gateway is asking for first-time device approval. Run `openclaw devices approve --latest` on the gateway host, then restart Claw3D and reconnect from this browser.";
+
+const requiresDeviceIdentityHint =
+  "This gateway rejected the client as a control UI without device identity. For remote OpenClaw/Tailscale connections, update to the latest Claw3D build and approve the device pairing on the gateway host.";
+
 const isGatewayProtocolMismatchError = (error: GatewayResponseError) => {
   if (error.code.trim().toUpperCase() !== "INVALID_REQUEST") return false;
   const message = error.message.trim();
@@ -540,6 +564,18 @@ const formatGatewayError = (error: unknown) => {
     }
     if (error.code === "INVALID_REQUEST" && /invalid config/i.test(error.message)) {
       return `Gateway error (${error.code}): ${error.message}. ${doctorFixHint}`;
+    }
+    if (error.code === "studio.upstream_timeout") {
+      return `Gateway error (${error.code}): ${error.message} ${tailscaleGatewayHint}`;
+    }
+    if (error.code === "studio.upstream_rejected") {
+      const lower = error.message.toLowerCase();
+      if (lower.includes("pairing required")) {
+        return `Gateway error (${error.code}): ${error.message}. ${pairingRequiredHint}`;
+      }
+      if (lower.includes("device identity")) {
+        return `Gateway error (${error.code}): ${error.message}. ${requiresDeviceIdentityHint}`;
+      }
     }
     return `Gateway error (${error.code}): ${error.message}`;
   }
@@ -608,6 +644,8 @@ const NON_RETRYABLE_CONNECT_ERROR_CODES = new Set([
   "studio.gateway_url_invalid",
   "studio.settings_load_failed",
   "studio.upstream_error",
+  "studio.upstream_timeout",
+  "studio.upstream_rejected",
 ]);
 
 const isNonRetryableConnectErrorCode = (code: string | null): boolean => {
@@ -899,7 +937,7 @@ export const useGatewayConnection = (
             gatewayUrl: resolveStudioProxyGatewayUrl(),
             token,
             authScopeKey: gatewayUrl,
-            clientName: "openclaw-control-ui",
+            clientName: resolveGatewayClientName(selectedAdapterType, gatewayUrl),
             disableDeviceAuth: selectedAdapterType !== "openclaw",
           });
           lastError = null;
