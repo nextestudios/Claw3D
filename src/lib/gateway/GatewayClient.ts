@@ -14,6 +14,10 @@ import type {
   StudioSettingsPatch,
   StudioSettingsPublic,
 } from "@/lib/studio/settings";
+import {
+  resolveDefaultStudioGatewayProfile,
+  resolveStudioGatewayProfiles,
+} from "@/lib/studio/settings";
 import type {
   StudioSettingsLoadOptions,
   StudioSettingsResponse,
@@ -115,7 +119,6 @@ const parseConnectFailedCloseReason = (
 
 const DEFAULT_UPSTREAM_GATEWAY_URL =
   process.env.NEXT_PUBLIC_GATEWAY_URL || "ws://localhost:18789";
-const DEFAULT_CUSTOM_RUNTIME_URL = "http://localhost:7770";
 const INITIAL_AUTO_CONNECT_DELAY_MS = 900;
 const INITIAL_CONNECT_RETRY_DELAY_MS = 1_200;
 const OPENCLAW_CONTROL_UI_CLIENT_ID = "openclaw-control-ui";
@@ -159,25 +162,6 @@ export const resolveInitialGatewayConnectAttemptCount = (
     default:
       if (hasConnectedOnce) return 1;
       return 1;
-  }
-};
-
-const resolveDefaultGatewayProfile = (
-  adapterType: StudioGatewayAdapterType,
-  localDefaults: StudioGatewaySettings | null
-): { url: string; token: string } => {
-  switch (adapterType) {
-    case "custom":
-      return { url: DEFAULT_CUSTOM_RUNTIME_URL, token: "" };
-    case "demo":
-    case "hermes":
-      return { url: "ws://localhost:18789", token: "" };
-    case "openclaw":
-    default:
-      return {
-        url: localDefaults?.url || DEFAULT_UPSTREAM_GATEWAY_URL,
-        token: localDefaults?.token ?? "",
-      };
   }
 };
 
@@ -734,7 +718,7 @@ export const useGatewayConnection = (
     (value: StudioGatewayAdapterType) => {
       setSelectedAdapterTypeState(value);
       const profile =
-        adapterProfiles[value] ?? resolveDefaultGatewayProfile(value, localGatewayDefaults);
+        adapterProfiles[value] ?? resolveDefaultStudioGatewayProfile(value, localGatewayDefaults);
       setGatewayUrl(profile.url);
       setToken(profile.token);
       setError(null);
@@ -780,72 +764,45 @@ export const useGatewayConnection = (
                     : "openclaw",
               }
             : null;
-        // When the user has no saved gateway URL, prefer the runtime
-        // localGatewayDefaults (from openclaw.json, CLAW3D_GATEWAY_URL,
-        // or detected local Hermes/demo adapter ports)
-        // over the build-time NEXT_PUBLIC_GATEWAY_URL which may be stale
-        // or empty if the operator forgot to rebuild after .env changes.
-        const hasSavedUrl = Boolean(gateway?.url?.trim());
-        const savedAdapterType =
-          hasSavedUrl && gateway && "adapterType" in gateway && typeof gateway.adapterType === "string"
-            ? ((gateway.adapterType === "demo" ||
+        const gatewaySettings: StudioGatewaySettings | null = gateway
+          ? {
+              url: typeof gateway.url === "string" ? gateway.url.trim() : "",
+              token: "",
+              adapterType:
+                gateway.adapterType === "demo" ||
                 gateway.adapterType === "hermes" ||
                 gateway.adapterType === "openclaw" ||
                 gateway.adapterType === "custom"
-                ? gateway.adapterType
-                : "openclaw") as StudioGatewayAdapterType)
-            : null;
-        const nextAdapterType =
-          savedAdapterType ??
-          lastKnownGood?.adapterType ??
-          normalizedDefaults?.adapterType ??
-          "openclaw";
-        const lastKnownGoodForSelectedAdapter =
-          lastKnownGood?.adapterType === nextAdapterType ? lastKnownGood : null;
-        const resolvedUrl = hasSavedUrl
-          ? gateway!.url
-          : lastKnownGoodForSelectedAdapter?.url ||
-            normalizedDefaults?.url ||
-            DEFAULT_UPSTREAM_GATEWAY_URL;
-        const baseProfiles = {
-          ...(gateway?.profiles
-            ? normalizeGatewayProfilesPublic(gateway.profiles)
-            : undefined),
-          ...(normalizedDefaults?.profiles ?? {}),
-        };
-        const mergedProfiles = {
-          ...baseProfiles,
-          ...(hasSavedUrl
-            ? {
-                [nextAdapterType]: {
-                  url: resolvedUrl,
-                  token:
-                    gateway && "token" in gateway && typeof gateway.token === "string"
-                      ? gateway.token
-                      : "",
-                },
-              }
-            : {}),
-        };
-        const selectedProfile = (
-          mergedProfiles[nextAdapterType] ??
-          lastKnownGoodForSelectedAdapter ??
-          resolveDefaultGatewayProfile(nextAdapterType, normalizedDefaults)
-        );
+                  ? gateway.adapterType
+                  : "openclaw",
+              ...(gateway?.profiles
+                ? { profiles: normalizeGatewayProfilesPublic(gateway.profiles) }
+                : {}),
+              ...(lastKnownGood ? { lastKnownGood } : {}),
+            }
+          : null;
+        const resolvedGatewayProfiles = resolveStudioGatewayProfiles({
+          gateway: gatewaySettings,
+          localDefaults: normalizedDefaults,
+        });
+        const nextAdapterType = resolvedGatewayProfiles.selectedAdapterType;
+        const selectedProfile =
+          resolvedGatewayProfiles.activeProfile ??
+          resolveDefaultStudioGatewayProfile(nextAdapterType, normalizedDefaults);
         const nextGatewayUrl = selectedProfile.url;
         const nextToken = selectedProfile.token;
         loadedGatewaySettings.current = {
           gatewayUrl: nextGatewayUrl.trim(),
           token: nextToken,
           adapterType: nextAdapterType,
-          profiles: mergedProfiles,
-          hasLastKnownGood: Boolean(lastKnownGoodForSelectedAdapter?.url),
+          profiles: resolvedGatewayProfiles.profiles,
+          hasLastKnownGood: Boolean(resolvedGatewayProfiles.lastKnownGoodForSelected?.url),
         };
         setGatewayUrl(nextGatewayUrl);
         setToken(nextToken);
         setSelectedAdapterTypeState(nextAdapterType);
-        setAdapterProfiles(mergedProfiles);
-        setHasLastKnownGoodState(Boolean(lastKnownGoodForSelectedAdapter?.url));
+        setAdapterProfiles(resolvedGatewayProfiles.profiles);
+        setHasLastKnownGoodState(Boolean(resolvedGatewayProfiles.lastKnownGoodForSelected?.url));
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : "Failed to load gateway settings.";

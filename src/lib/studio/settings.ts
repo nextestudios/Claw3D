@@ -24,6 +24,7 @@ export type StudioGatewaySettings = {
 };
 
 export type StudioGatewayAdapterType = "openclaw" | "hermes" | "demo" | "custom";
+export const STUDIO_GATEWAY_ADAPTER_TYPES = ["openclaw", "hermes", "demo", "custom"] as const;
 
 export type StudioGatewayProfile = {
   url: string;
@@ -72,6 +73,13 @@ export type StudioGatewayConnectionStatePatch = {
   url?: string | null;
   token?: string | null;
   adapterType?: StudioGatewayAdapterType | null;
+};
+
+export type ResolvedStudioGatewayProfiles = {
+  selectedAdapterType: StudioGatewayAdapterType;
+  activeProfile: StudioGatewayProfile;
+  profiles: Partial<Record<StudioGatewayAdapterType, StudioGatewayProfile>>;
+  lastKnownGoodForSelected: StudioGatewayConnectionState | null;
 };
 
 export type FocusFilter = "all" | "running" | "approvals";
@@ -222,6 +230,9 @@ export type StudioSettingsPatch = {
 };
 
 const SETTINGS_VERSION = 1 as const;
+const DEFAULT_OPENCLAW_GATEWAY_URL = "ws://localhost:18789";
+const DEFAULT_LOCAL_ADAPTER_GATEWAY_URL = "ws://localhost:18789";
+const DEFAULT_CUSTOM_RUNTIME_URL = "http://localhost:7770";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object");
@@ -828,6 +839,87 @@ const normalizeGatewayAdapterType = (
     return adapterType;
   }
   return fallback;
+};
+
+export const resolveDefaultStudioGatewayProfile = (
+  adapterType: StudioGatewayAdapterType,
+  localDefaults: StudioGatewaySettings | null = null
+): StudioGatewayProfile => {
+  const explicitProfile = localDefaults?.profiles?.[adapterType];
+  if (explicitProfile?.url) {
+    return {
+      url: explicitProfile.url,
+      token: explicitProfile.token,
+    };
+  }
+
+  if (localDefaults?.adapterType === adapterType && localDefaults.url.trim()) {
+    return {
+      url: localDefaults.url,
+      token: localDefaults.token,
+    };
+  }
+
+  switch (adapterType) {
+    case "custom":
+      return { url: DEFAULT_CUSTOM_RUNTIME_URL, token: "" };
+    case "hermes":
+    case "demo":
+      return { url: DEFAULT_LOCAL_ADAPTER_GATEWAY_URL, token: "" };
+    case "openclaw":
+    default:
+      return { url: DEFAULT_OPENCLAW_GATEWAY_URL, token: "" };
+  }
+};
+
+export const resolveStudioGatewayProfiles = ({
+  gateway,
+  localDefaults = null,
+}: {
+  gateway: StudioGatewaySettings | null;
+  localDefaults?: StudioGatewaySettings | null;
+}): ResolvedStudioGatewayProfiles => {
+  const selectedAdapterType =
+    gateway?.adapterType ??
+    gateway?.lastKnownGood?.adapterType ??
+    localDefaults?.adapterType ??
+    "openclaw";
+
+  const profiles: Partial<Record<StudioGatewayAdapterType, StudioGatewayProfile>> = {
+    ...(localDefaults?.profiles ?? {}),
+    ...(gateway?.profiles ?? {}),
+  };
+
+  if (gateway?.url?.trim()) {
+    profiles[selectedAdapterType] = {
+      url: gateway.url,
+      token: gateway.token,
+    };
+  }
+
+  const lastKnownGoodForSelected =
+    gateway?.lastKnownGood?.adapterType === selectedAdapterType ? gateway.lastKnownGood : null;
+
+  if (!profiles[selectedAdapterType] && lastKnownGoodForSelected?.url) {
+    profiles[selectedAdapterType] = {
+      url: lastKnownGoodForSelected.url,
+      token: lastKnownGoodForSelected.token,
+    };
+  }
+
+  for (const adapterType of STUDIO_GATEWAY_ADAPTER_TYPES) {
+    if (profiles[adapterType]?.url) continue;
+    profiles[adapterType] = resolveDefaultStudioGatewayProfile(adapterType, localDefaults);
+  }
+
+  return {
+    selectedAdapterType,
+    activeProfile:
+      profiles[selectedAdapterType] ??
+      resolveDefaultStudioGatewayProfile(selectedAdapterType, localDefaults),
+    profiles,
+    lastKnownGoodForSelected,
+  };
 };
 
 const normalizeFocused = (value: unknown): Record<string, StudioFocusedPreference> => {

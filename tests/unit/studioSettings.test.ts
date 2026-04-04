@@ -4,6 +4,8 @@ import { createDefaultAgentAvatarProfile } from "@/lib/avatars/profile";
 import {
   mergeStudioSettings,
   normalizeStudioSettings,
+  resolveDefaultStudioGatewayProfile,
+  resolveStudioGatewayProfiles,
 } from "@/lib/studio/settings";
 
 describe("studio settings normalization", () => {
@@ -299,5 +301,46 @@ describe("studio settings normalization", () => {
         ],
       }),
     );
+  });
+
+  it("resolves simultaneous runtime profiles without collapsing them to one active url", () => {
+    const resolved = resolveStudioGatewayProfiles({
+      gateway: normalizeStudioSettings({
+        gateway: {
+          url: "ws://localhost:28789",
+          token: "",
+          adapterType: "hermes",
+          profiles: {
+            openclaw: { url: "ws://localhost:18789", token: "open-token" },
+            demo: { url: "ws://localhost:38789", token: "" },
+          },
+        },
+      }).gateway,
+      localDefaults: null,
+    });
+
+    expect(resolved.selectedAdapterType).toBe("hermes");
+    expect(resolved.activeProfile).toEqual({
+      url: "ws://localhost:28789",
+      token: "",
+    });
+    expect(resolved.profiles).toEqual(
+      expect.objectContaining({
+        openclaw: { url: "ws://localhost:18789", token: "open-token" },
+        hermes: { url: "ws://localhost:28789", token: "" },
+        demo: { url: "ws://localhost:38789", token: "" },
+      }),
+    );
+  });
+
+  it("resolves adapter-specific defaults for dormant profiles", () => {
+    expect(resolveDefaultStudioGatewayProfile("custom", null)).toEqual({
+      url: "http://localhost:7770",
+      token: "",
+    });
+    expect(resolveDefaultStudioGatewayProfile("demo", null)).toEqual({
+      url: "ws://localhost:18789",
+      token: "",
+    });
   });
 });
