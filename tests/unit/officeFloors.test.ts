@@ -6,6 +6,7 @@ import {
   getAdjacentEnabledOfficeFloorId,
   listEnabledOfficeFloors,
   listOfficeFloorsForProvider,
+  listOfficeFloorsForZone,
   OFFICE_FLOORS,
   resolveActiveOfficeFloorId,
 } from "@/lib/office/floors";
@@ -26,9 +27,12 @@ describe("office floor registry", () => {
   it("looks up floors by id", () => {
     expect(getOfficeFloor("hermes-first")).toMatchObject({
       label: "Hermes Floor",
+      shortLabel: "Hermes",
       provider: "hermes",
       kind: "runtime",
+      zone: "building",
       enabled: true,
+      sortOrder: 20,
       runtimeProfileId: "hermes-default",
     });
   });
@@ -49,6 +53,18 @@ describe("office floor registry", () => {
       "traders-floor",
       "campus",
     ]);
+  });
+
+  it("groups floors by zone for building navigation", () => {
+    expect(listOfficeFloorsForZone("building").map((floor) => floor.id)).toEqual([
+      "lobby",
+      "openclaw-ground",
+      "hermes-first",
+      "custom-second",
+      "training",
+      "traders-floor",
+    ]);
+    expect(listOfficeFloorsForZone("outside").map((floor) => floor.id)).toEqual(["campus"]);
   });
 
   it("resolves active floor ids against enabled floors", () => {

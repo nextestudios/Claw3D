@@ -143,6 +143,7 @@ import { KanbanDisabledPanel } from "@/features/office/components/panels/KanbanD
 import { PlaybooksPanel } from "@/features/office/components/panels/PlaybooksPanel";
 import { SkillsMarketplaceModal } from "@/features/office/components/panels/SkillsMarketplaceModal";
 import { TaskBoardPanel } from "@/features/office/components/panels/TaskBoardPanel";
+import { OfficeFloorNav } from "@/features/office/components/OfficeFloorNav";
 import { JukeboxPanel } from "@/features/spotify-jukebox/components/JukeboxPanel";
 import { JukeboxDisabledPanel } from "@/features/spotify-jukebox/components/JukeboxDisabledPanel";
 import { executeBrowserJukeboxCommand } from "@/features/spotify-jukebox/agentBridge";
@@ -183,12 +184,9 @@ import {
   buildFloorRosterErrorState,
   buildFloorRosterState,
   createFloorRosterCache,
-  defaultFloorRosterState,
 } from "@/lib/office/floorRoster";
 import {
-  getAdjacentEnabledOfficeFloorId,
   getOfficeFloor,
-  listEnabledOfficeFloors,
   resolveActiveOfficeFloorId,
   type FloorId,
 } from "@/lib/office/floors";
@@ -1036,13 +1034,10 @@ export function OfficeScreen({
   const { showOnboarding, completeOnboarding, resetOnboarding } =
     useOnboardingState();
   const [forceShowOnboarding, setForceShowOnboarding] = useState(false);
-  const enabledFloors = useMemo(() => listEnabledOfficeFloors(), []);
   const activeFloor = useMemo(
     () => getOfficeFloor(resolveActiveOfficeFloorId(activeFloorId)),
     [activeFloorId],
   );
-  const activeFloorRoster =
-    floorRosterCache[activeFloor.id] ?? defaultFloorRosterState(activeFloor.id);
   useEffect(() => {
     initJukeboxStore();
   }, [initJukeboxStore]);
@@ -4619,57 +4614,11 @@ export function OfficeScreen({
         </div>
       ) : null}
 
-      <div className="pointer-events-none fixed left-1/2 top-4 z-40 -translate-x-1/2 px-4">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-amber-400/25 bg-black/82 px-3 py-2 shadow-2xl backdrop-blur">
-          <button
-            type="button"
-            className="rounded border border-amber-500/20 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-100/80 transition-colors hover:border-amber-400/45 hover:text-amber-50"
-            onClick={() =>
-              handleSelectFloor(getAdjacentEnabledOfficeFloorId(activeFloor.id, -1))
-            }
-            aria-label="Switch to previous floor"
-          >
-            Prev
-          </button>
-          <div className="min-w-[220px]">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-200/70">
-              Active floor
-            </div>
-            <div className="mt-1 flex items-center gap-2">
-              <select
-                value={activeFloor.id}
-                onChange={(event) =>
-                  handleSelectFloor(event.target.value as FloorId)
-                }
-                className="rounded border border-amber-500/20 bg-[#120d06]/95 px-2 py-1 font-mono text-[11px] text-amber-50 focus:border-amber-400/45 focus:outline-none"
-                aria-label="Select office floor"
-              >
-                {enabledFloors.map((floor) => (
-                  <option key={floor.id} value={floor.id}>
-                    {floor.label}
-                  </option>
-                ))}
-              </select>
-              <span className="rounded border border-cyan-500/20 bg-cyan-950/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-100/75">
-                {activeFloor.provider}
-              </span>
-            </div>
-            <div className="mt-1 font-mono text-[10px] text-white/45">
-              roster {activeFloorRoster.entries.length} • {activeFloorRoster.status}
-            </div>
-          </div>
-          <button
-            type="button"
-            className="rounded border border-amber-500/20 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-100/80 transition-colors hover:border-amber-400/45 hover:text-amber-50"
-            onClick={() =>
-              handleSelectFloor(getAdjacentEnabledOfficeFloorId(activeFloor.id, 1))
-            }
-            aria-label="Switch to next floor"
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <OfficeFloorNav
+        activeFloorId={activeFloor.id}
+        floorRosterCache={floorRosterCache}
+        onSelectFloor={handleSelectFloor}
+      />
 
       {deleteAgentStatusLine ? (
         <div className="pointer-events-none fixed left-1/2 top-5 z-40 -translate-x-1/2 px-4">
