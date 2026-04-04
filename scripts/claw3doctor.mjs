@@ -5,10 +5,15 @@ import { execFileSync } from "node:child_process";
 
 import { WebSocket } from "ws";
 import {
+  buildCustomRuntimeWarnings,
+  buildDoctorJsonReport,
   DOCTOR_STATUSES,
   buildGatewayWarnings,
+  buildOpenClawWarnings,
   formatDoctorReport,
   resolveRuntimeContext,
+  shouldRunCustomChecks,
+  shouldRunDemoChecks,
   shouldRunHermesChecks,
   shouldRunOpenClawChecks,
   summarizeChecks,
@@ -95,6 +100,10 @@ const checkFail = (label, message, actions) => ({
 
 const trim = (value) => (typeof value === "string" ? value.trim() : "");
 
+const parseDoctorArgs = (argv) => ({
+  json: argv.includes("--json"),
+});
+
 const probeWebSocket = async (url, timeoutMs = 3500) =>
   await new Promise((resolve) => {
     let settled = false;
@@ -176,8 +185,30 @@ const detectHermesModelHealth = async () => {
   };
 };
 
+const probeCustomRuntimeHealth = async (runtimeUrl) => {
+  const baseUrl = runtimeUrl.replace(/\/$/, "");
+  const health = await probeHttpJson({ url: `${baseUrl}/health` });
+  if (health.ok) {
+    return { ok: true, message: "Custom runtime /health responded successfully." };
+  }
+
+  const registry = await probeHttpJson({ url: `${baseUrl}/registry` });
+  if (registry.ok) {
+    return { ok: true, message: "Custom runtime /registry responded successfully." };
+  }
+
+  return {
+    ok: false,
+    message:
+      health.text ||
+      registry.text ||
+      "Custom runtime did not respond on /health or /registry.",
+  };
+};
+
 async function main() {
   loadRuntimeEnv();
+  const args = parseDoctorArgs(process.argv.slice(2));
 
   const env = process.env;
   const stateDir = resolveStateDir(env);
@@ -219,16 +250,49 @@ async function main() {
     checks.push(checkWarn("Gateway hints", warning));
   }
 
+  if (runtimeContext.adapterType === "openclaw") {
+    for (const warning of buildOpenClawWarnings({
+      gatewayUrl: runtimeContext.gatewayUrl,
+      tokenConfigured: runtimeContext.tokenConfigured,
+    })) {
+      checks.push(checkWarn("OpenClaw hints", warning, [
+        "If the browser/device is not yet approved, check `openclaw devices list` and approve the pending device before retrying the remote connection.",
+      ]));
+    }
+  }
+
+  if (shouldRunCustomChecks({ runtimeContext })) {
+    for (const warning of buildCustomRuntimeWarnings({
+      gatewayUrl: runtimeContext.gatewayUrl,
+      allowlist: trim(env.CUSTOM_RUNTIME_ALLOWLIST) || trim(env.UPSTREAM_ALLOWLIST),
+      nodeEnv: trim(env.NODE_ENV),
+    })) {
+      checks.push(checkWarn("Custom runtime hints", warning));
+    }
+  }
+
   if (runtimeContext.gatewayUrl) {
-    const wsProbe = await probeWebSocket(runtimeContext.gatewayUrl);
-    checks.push(
-      wsProbe.ok
-        ? checkPass("Gateway reachability", wsProbe.message)
-        : checkFail("Gateway reachability", wsProbe.message, [
-            "Verify the configured gateway URL is correct and the backend is listening.",
-            "If this is a public/tunneled deployment, compare direct local/LAN behavior before debugging deeper.",
-          ]),
-    );
+    if (runtimeContext.adapterType === "custom") {
+      const customProbe = await probeCustomRuntimeHealth(runtimeContext.gatewayUrl);
+      checks.push(
+        customProbe.ok
+          ? checkPass("Custom runtime reachability", customProbe.message)
+          : checkFail("Custom runtime reachability", customProbe.message, [
+              "Verify the custom runtime base URL is correct and exposes /health or /registry over HTTP.",
+              "If this runtime sits behind the Studio custom proxy, verify CUSTOM_RUNTIME_ALLOWLIST / UPSTREAM_ALLOWLIST for the target host.",
+            ]),
+      );
+    } else {
+      const wsProbe = await probeWebSocket(runtimeContext.gatewayUrl);
+      checks.push(
+        wsProbe.ok
+          ? checkPass("Gateway reachability", wsProbe.message)
+          : checkFail("Gateway reachability", wsProbe.message, [
+              "Verify the configured gateway URL is correct and the backend is listening.",
+              "If this is a public/tunneled deployment, compare direct local/LAN behavior before debugging deeper.",
+            ]),
+      );
+    }
   }
 
   const openclawConfigPath = path.join(stateDir, "openclaw.json");
@@ -250,6 +314,17 @@ async function main() {
         : checkWarn("OpenClaw version", version, [
             "Install OpenClaw or ensure it is available on PATH if this machine should run it directly.",
           ]),
+    );
+  }
+
+  if (shouldRunDemoChecks({ runtimeContext, env })) {
+    const configuredPort = trim(env.DEMO_ADAPTER_PORT) || "18789";
+    checks.push(
+      checkPass(
+        "Demo gateway config",
+        `Demo mode expects the mock gateway on ws://localhost:${configuredPort}.`,
+        ["Run `npm run demo-gateway` if you want a no-runtime office smoke test."],
+      ),
     );
   }
 
@@ -299,13 +374,17 @@ async function main() {
   }
 
   const summary = summarizeChecks(checks);
-  const report = formatDoctorReport({
+  const reportInput = {
     summary,
     runtimeContext,
     paths: { stateDir, settingsPath },
     checks,
-  });
-  console.log(report);
+  };
+  if (args.json) {
+    console.log(JSON.stringify(buildDoctorJsonReport(reportInput), null, 2));
+  } else {
+    console.log(formatDoctorReport(reportInput));
+  }
   process.exit(summary === DOCTOR_STATUSES.fail ? 1 : 0);
 }
 

@@ -6,6 +6,12 @@ export const DOCTOR_STATUSES = {
 
 const VALID_ADAPTER_TYPES = new Set(["openclaw", "hermes", "demo", "custom"]);
 const TUNNEL_HOST_PATTERN = /(cloudflare|trycloudflare|ngrok|tailscale|ts\.net|tunnel)/i;
+const DEFAULT_GATEWAY_URL_BY_ADAPTER = {
+  openclaw: "ws://localhost:18789",
+  hermes: "ws://localhost:18789",
+  demo: "ws://localhost:18789",
+  custom: "http://localhost:7770",
+};
 
 const isRecord = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
 
@@ -32,14 +38,18 @@ export const resolveRuntimeContext = ({ settings, upstreamGateway, env = process
     profiles[key] = { url, token };
   }
 
-  const selectedProfile =
-    profiles[adapterType] ??
-    (trimString(upstreamGateway?.url)
+  const upstreamUrl = trimString(upstreamGateway?.url);
+  const selectedProfile = profiles[adapterType]
+    ? profiles[adapterType]
+    : upstreamUrl
       ? {
-          url: trimString(upstreamGateway.url),
+          url: upstreamUrl,
           token: trimString(upstreamGateway?.token),
         }
-      : null);
+      : {
+          url: DEFAULT_GATEWAY_URL_BY_ADAPTER[adapterType],
+          token: "",
+        };
 
   return {
     adapterType,
@@ -103,6 +113,82 @@ export const buildGatewayWarnings = ({ gatewayUrl, studioAccessToken = "", host 
   return warnings;
 };
 
+export const buildOpenClawWarnings = ({ gatewayUrl, tokenConfigured = false }) => {
+  const warnings = [];
+  const url = trimString(gatewayUrl);
+  if (!url) return warnings;
+
+  let parsed = null;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return warnings;
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const isLocalHost =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".local");
+  if (isLocalHost) {
+    return warnings;
+  }
+
+  if (!tokenConfigured) {
+    warnings.push(
+      "Remote OpenClaw profile has no gateway token configured. Remote/browser clients often fail with pairing or approval-style errors until the device or token path is approved.",
+    );
+  }
+
+  if (TUNNEL_HOST_PATTERN.test(hostname)) {
+    warnings.push(
+      "Remote OpenClaw host looks tunnel-backed. If you hit 1008/1011/1012-style failures, verify direct local or LAN access first, then check pairing/device approval and reverse-proxy websocket handling.",
+    );
+  }
+
+  return warnings;
+};
+
+export const buildCustomRuntimeWarnings = ({
+  gatewayUrl,
+  allowlist = "",
+  nodeEnv = "",
+}) => {
+  const warnings = [];
+  const url = trimString(gatewayUrl);
+  if (!url) return warnings;
+
+  let parsed = null;
+  try {
+    parsed = new URL(url);
+  } catch {
+    warnings.push("Custom runtime URL is not a valid URL.");
+    return warnings;
+  }
+
+  if (parsed.protocol === "ws:" || parsed.protocol === "wss:") {
+    warnings.push(
+      "Custom runtime profile uses a websocket URL. The custom provider boundary is expected to expose an HTTP API (for example /health and /v1/chat/completions).",
+    );
+  }
+
+  const isProduction = trimString(nodeEnv).toLowerCase() === "production";
+  const hostname = parsed.hostname.toLowerCase();
+  const isLocalHost =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".local");
+  if (isProduction && !isLocalHost && !trimString(allowlist)) {
+    warnings.push(
+      "Production custom runtime is configured without CUSTOM_RUNTIME_ALLOWLIST or UPSTREAM_ALLOWLIST. The runtime proxy should not rely on open-host defaults there.",
+    );
+  }
+
+  return warnings;
+};
+
 export const summarizeChecks = (checks) => {
   let hasFail = false;
   let hasWarn = false;
@@ -121,6 +207,11 @@ export const shouldRunHermesChecks = ({ runtimeContext, env = process.env }) =>
 
 export const shouldRunOpenClawChecks = ({ runtimeContext, openclawConfigExists = false }) =>
   runtimeContext.adapterType === "openclaw" || openclawConfigExists;
+
+export const shouldRunDemoChecks = ({ runtimeContext, env = process.env }) =>
+  runtimeContext.adapterType === "demo" || Boolean(trimString(env.DEMO_ADAPTER_PORT));
+
+export const shouldRunCustomChecks = ({ runtimeContext }) => runtimeContext.adapterType === "custom";
 
 export const formatDoctorReport = ({ summary, runtimeContext, paths, checks }) => {
   const lines = [];
@@ -145,3 +236,11 @@ export const formatDoctorReport = ({ summary, runtimeContext, paths, checks }) =
   }
   return lines.join("\n");
 };
+
+export const buildDoctorJsonReport = ({ summary, runtimeContext, paths, checks }) => ({
+  doctor: "claw3doctor",
+  summary,
+  runtimeContext,
+  paths,
+  checks,
+});
