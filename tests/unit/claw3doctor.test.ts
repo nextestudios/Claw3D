@@ -142,6 +142,7 @@ describe("claw3doctor core", () => {
       expect.arrayContaining([
         expect.stringContaining("openclaw devices list"),
         expect.stringContaining("direct local or LAN access"),
+        expect.stringContaining("Tailnet-hosted"),
       ]),
     );
   });
@@ -241,6 +242,8 @@ describe("claw3doctor core", () => {
       ],
     });
 
+    expect(report).toContain("Claw3Doctor");
+    expect(report).toContain("Selected profile:");
     expect(report).toContain("Configured profiles:");
     expect(report).toContain("Runtime profiles");
     expect(report).toContain("Check counts:");

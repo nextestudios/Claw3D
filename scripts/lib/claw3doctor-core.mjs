@@ -16,6 +16,20 @@ const DEFAULT_GATEWAY_URL_BY_ADAPTER = {
 const isRecord = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
 
 const trimString = (value) => (typeof value === "string" ? value.trim() : "");
+const supportsAnsi = () => Boolean(process.stdout?.isTTY && process.env.NO_COLOR !== "1");
+const colorize = (text, code) => (supportsAnsi() ? `\u001b[${code}m${text}\u001b[0m` : text);
+const formatStatusBadge = (status) => {
+  switch (status) {
+    case DOCTOR_STATUSES.pass:
+      return colorize("[PASS]", "32");
+    case DOCTOR_STATUSES.warn:
+      return colorize("[WARN]", "33");
+    case DOCTOR_STATUSES.fail:
+      return colorize("[FAIL]", "31");
+    default:
+      return `[${status}]`;
+  }
+};
 
 export const normalizeAdapterType = (value, fallback = "openclaw") => {
   const normalized = trimString(value).toLowerCase();
@@ -221,6 +235,14 @@ export const buildGatewayFailureActions = ({ adapterType, message = "", gatewayU
   const actions = [];
   const normalized = trimString(message).toLowerCase();
   const url = trimString(gatewayUrl);
+  let parsedUrl = null;
+  try {
+    parsedUrl = url ? new URL(url) : null;
+  } catch {}
+  const hostname = parsedUrl?.hostname?.toLowerCase() ?? "";
+  const isTunnelBacked = Boolean(hostname && TUNNEL_HOST_PATTERN.test(hostname));
+  const isCloudflare = hostname.includes("cloudflare");
+  const isTailscale = hostname.includes("tailscale") || hostname.endsWith("ts.net");
 
   if (normalized.includes("econnrefused") || normalized.includes("timed out")) {
     actions.push("Verify the backend is actually listening on the configured host and port before retrying from Claw3D.");
@@ -242,7 +264,15 @@ export const buildGatewayFailureActions = ({ adapterType, message = "", gatewayU
     actions.push("Recheck the configured token/auth path. The gateway or proxy is rejecting the connection before the office can load.");
   }
 
-  if (url && TUNNEL_HOST_PATTERN.test(url)) {
+  if (isCloudflare) {
+    actions.push("For Cloudflare or similar HTTPS tunnels, verify websocket upgrade forwarding and prefer an HTTPS-backed Studio path rather than a bare ws:// remote endpoint.");
+  }
+
+  if (isTailscale) {
+    actions.push("For Tailnet-hosted OpenClaw, test the same gateway directly on local/LAN first, then compare against the Tailnet URL so pairing/proxy issues do not get conflated.");
+  }
+
+  if (isTunnelBacked) {
     actions.push("Because this endpoint looks tunnel-backed, reproduce once via direct local or LAN access to separate runtime problems from tunnel/proxy problems.");
   }
 
@@ -291,12 +321,12 @@ export const formatDoctorReport = ({ summary, runtimeContext, paths, checks }) =
     groupedChecks.set(category, entries);
   }
   const lines = [];
-  lines.push("+--------------------------------------------------+");
-  lines.push(`| Claw3Doctor ${summary.padEnd(35, " ")}|`);
-  lines.push("+--------------------------------------------------+");
+  lines.push("==================================================");
+  lines.push(`Claw3Doctor ${formatStatusBadge(summary)}`);
+  lines.push("==================================================");
   lines.push("");
   lines.push(`Runtime provider: ${runtimeContext.adapterType}`);
-  lines.push(`Gateway URL: ${runtimeContext.gatewayUrl || "(not configured)"}`);
+  lines.push(`Selected profile: ${runtimeContext.gatewayUrl || "(not configured)"}`);
   lines.push(`Gateway token: ${runtimeContext.tokenConfigured ? "configured" : "missing"}`);
   lines.push(`State dir: ${paths.stateDir}`);
   lines.push(`Studio settings: ${paths.settingsPath}`);
@@ -313,8 +343,9 @@ export const formatDoctorReport = ({ summary, runtimeContext, paths, checks }) =
   lines.push("");
   for (const [category, categoryChecks] of groupedChecks.entries()) {
     lines.push(`${category}`);
+    lines.push("-".repeat(category.length));
     for (const check of categoryChecks) {
-      lines.push(`  [${check.status.toLowerCase()}] ${check.label}: ${check.message}`);
+      lines.push(`  ${formatStatusBadge(check.status)} ${check.label}: ${check.message}`);
     }
     lines.push("");
   }
