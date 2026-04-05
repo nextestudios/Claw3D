@@ -167,6 +167,174 @@ function OfficeFlagPole({
   );
 }
 
+function TowerBlock({
+  position,
+  width,
+  depth,
+  height,
+  bodyColor,
+  accentColor,
+  windowColor,
+}: {
+  position: [number, number, number];
+  width: number;
+  depth: number;
+  height: number;
+  bodyColor: string;
+  accentColor: string;
+  windowColor: string;
+}) {
+  return (
+    <group position={position}>
+      <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[width, height, depth]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.88} metalness={0.08} />
+      </mesh>
+      <mesh position={[0, height + 0.14, 0]} castShadow>
+        <boxGeometry args={[width * 0.76, 0.28, depth * 0.76]} />
+        <meshStandardMaterial color={accentColor} roughness={0.74} metalness={0.2} />
+      </mesh>
+      {Array.from({ length: 4 }).map((_, row) =>
+        Array.from({ length: 3 }).map((__, column) => (
+          <mesh
+            key={`tower-window-${row}-${column}`}
+            position={[
+              -width * 0.24 + column * (width * 0.24),
+              0.4 + row * (height * 0.18),
+              depth / 2 + 0.01,
+            ]}
+          >
+            <planeGeometry args={[width * 0.13, height * 0.08]} />
+            <meshBasicMaterial color={windowColor} />
+          </mesh>
+        )),
+      )}
+      {Array.from({ length: 4 }).map((_, row) =>
+        Array.from({ length: 2 }).map((__, column) => (
+          <mesh
+            key={`tower-side-window-${row}-${column}`}
+            position={[
+              width / 2 + 0.01,
+              0.4 + row * (height * 0.18),
+              -depth * 0.16 + column * (depth * 0.32),
+            ]}
+            rotation={[0, -Math.PI / 2, 0]}
+          >
+            <planeGeometry args={[depth * 0.16, height * 0.08]} />
+            <meshBasicMaterial color={windowColor} />
+          </mesh>
+        )),
+      )}
+    </group>
+  );
+}
+
+function StorefrontBlock({
+  position,
+  rotationY = 0,
+  width,
+  depth,
+  height,
+  bodyColor,
+  awningColor,
+  trimColor,
+  windowColor,
+}: {
+  position: [number, number, number];
+  rotationY?: number;
+  width: number;
+  depth: number;
+  height: number;
+  bodyColor: string;
+  awningColor: string;
+  trimColor: string;
+  windowColor: string;
+}) {
+  return (
+    <group position={position} rotation={[0, rotationY, 0]}>
+      <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[width, height, depth]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.86} metalness={0.08} />
+      </mesh>
+      <mesh position={[0, height + 0.08, 0]} castShadow>
+        <boxGeometry args={[width + 0.08, 0.16, depth + 0.08]} />
+        <meshStandardMaterial color={trimColor} roughness={0.72} metalness={0.16} />
+      </mesh>
+      <mesh position={[0, height * 0.58, depth / 2 + 0.13]} castShadow>
+        <boxGeometry args={[width * 0.94, 0.12, 0.28]} />
+        <meshStandardMaterial color={awningColor} roughness={0.7} metalness={0.04} />
+      </mesh>
+      <mesh position={[0, height * 0.78, depth / 2 + 0.02]}>
+        <planeGeometry args={[width * 0.66, height * 0.16]} />
+        <meshBasicMaterial color={trimColor} />
+      </mesh>
+      <mesh position={[-width * 0.2, height * 0.34, depth / 2 + 0.01]}>
+        <planeGeometry args={[width * 0.22, height * 0.36]} />
+        <meshBasicMaterial color={windowColor} />
+      </mesh>
+      <mesh position={[width * 0.2, height * 0.34, depth / 2 + 0.01]}>
+        <planeGeometry args={[width * 0.22, height * 0.36]} />
+        <meshBasicMaterial color={windowColor} />
+      </mesh>
+      <mesh position={[0, height * 0.18, depth / 2 + 0.015]}>
+        <planeGeometry args={[width * 0.16, height * 0.28]} />
+        <meshBasicMaterial color="#2a1c12" />
+      </mesh>
+    </group>
+  );
+}
+
+function TownhouseBlock({
+  position,
+  rotationY = 0,
+  width,
+  depth,
+  height,
+  bodyColor,
+  roofColor,
+  doorColor,
+  windowColor,
+}: {
+  position: [number, number, number];
+  rotationY?: number;
+  width: number;
+  depth: number;
+  height: number;
+  bodyColor: string;
+  roofColor: string;
+  doorColor: string;
+  windowColor: string;
+}) {
+  return (
+    <group position={position} rotation={[0, rotationY, 0]}>
+      <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[width, height, depth]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.9} metalness={0.05} />
+      </mesh>
+      <mesh position={[0, height + width * 0.14, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+        <coneGeometry args={[width * 0.72, width * 0.54, 4]} />
+        <meshStandardMaterial color={roofColor} roughness={0.78} metalness={0.08} />
+      </mesh>
+      <mesh position={[0, height * 0.18, depth / 2 + 0.015]}>
+        <planeGeometry args={[width * 0.18, height * 0.28]} />
+        <meshBasicMaterial color={doorColor} />
+      </mesh>
+      {[-width * 0.22, width * 0.22].map((offsetX, index) => (
+        <mesh key={`townhouse-window-lower-${index}`} position={[offsetX, height * 0.32, depth / 2 + 0.01]}>
+          <planeGeometry args={[width * 0.16, height * 0.16]} />
+          <meshBasicMaterial color={windowColor} />
+        </mesh>
+      ))}
+      {[-width * 0.22, width * 0.22].map((offsetX, index) => (
+        <mesh key={`townhouse-window-upper-${index}`} position={[offsetX, height * 0.62, depth / 2 + 0.01]}>
+          <planeGeometry args={[width * 0.16, height * 0.16]} />
+          <meshBasicMaterial color={windowColor} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 export const FloorAndWalls = memo(function FloorAndWalls({
   showRemoteOffice = true,
 }: {
@@ -354,8 +522,120 @@ export const FloorAndWalls = memo(function FloorAndWalls({
               </mesh>
             );
           })}
+
+          {[
+            { x: 110, y: 740, width: 1.9, depth: 0.95, height: 1.35, body: "#6d4c41", awning: "#d97706", trim: "#fbbf24", window: "#fde68a" },
+            { x: 420, y: 740, width: 2.2, depth: 1.05, height: 1.48, body: "#455a64", awning: "#0ea5e9", trim: "#dbeafe", window: "#bfdbfe" },
+            { x: 790, y: 740, width: 2.05, depth: 1, height: 1.4, body: "#7c2d12", awning: "#fb7185", trim: "#fecdd3", window: "#fef3c7" },
+            { x: 1130, y: 740, width: 2.15, depth: 1.02, height: 1.44, body: "#1f2937", awning: "#22c55e", trim: "#dcfce7", window: "#d1fae5" },
+            { x: 1490, y: 740, width: 1.95, depth: 0.96, height: 1.36, body: "#374151", awning: "#8b5cf6", trim: "#ddd6fe", window: "#c4b5fd" },
+          ].map((store) => {
+            const [wx, , wz] = toWorld(store.x, store.y);
+            return (
+              <StorefrontBlock
+                key={`storefront-${store.x}-${store.y}`}
+                position={[wx, 0, wz]}
+                width={store.width}
+                depth={store.depth}
+                height={store.height}
+                bodyColor={store.body}
+                awningColor={store.awning}
+                trimColor={store.trim}
+                windowColor={store.window}
+              />
+            );
+          })}
+
+          {[
+            { x: 180, y: 960, width: 1.45, depth: 1.08, height: 1.18, body: "#d6b48a", roof: "#8d6e63", door: "#5b3a29", window: "#fff7c2" },
+            { x: 470, y: 958, width: 1.58, depth: 1.12, height: 1.22, body: "#c4d7b2", roof: "#546e7a", door: "#2f3e46", window: "#dbeafe" },
+            { x: 790, y: 962, width: 1.5, depth: 1.06, height: 1.2, body: "#d7ccc8", roof: "#6d4c41", door: "#4e342e", window: "#fef3c7" },
+            { x: 1110, y: 958, width: 1.54, depth: 1.08, height: 1.24, body: "#cbb6d9", roof: "#5b4375", door: "#35263f", window: "#e9d5ff" },
+            { x: 1430, y: 962, width: 1.48, depth: 1.04, height: 1.18, body: "#b7d3c6", roof: "#355c4d", door: "#254237", window: "#dcfce7" },
+          ].map((house) => {
+            const [wx, , wz] = toWorld(house.x, house.y);
+            return (
+              <TownhouseBlock
+                key={`townhouse-${house.x}-${house.y}`}
+                position={[wx, 0, wz]}
+                rotationY={Math.PI}
+                width={house.width}
+                depth={house.depth}
+                height={house.height}
+                bodyColor={house.body}
+                roofColor={house.roof}
+                doorColor={house.door}
+                windowColor={house.window}
+              />
+            );
+          })}
+
+          {[
+            { x: 35, y: 865, width: 1.8, depth: 1.7, height: 2.7, body: "#334155", accent: "#0f172a", window: "#93c5fd" },
+            { x: 1745, y: 865, width: 1.95, depth: 1.78, height: 3.1, body: "#1f2937", accent: "#111827", window: "#fef08a" },
+            { x: 1680, y: 1080, width: 1.65, depth: 1.52, height: 2.45, body: "#475569", accent: "#1e293b", window: "#bfdbfe" },
+          ].map((tower) => {
+            const [wx, , wz] = toWorld(tower.x, tower.y);
+            return (
+              <TowerBlock
+                key={`tower-${tower.x}-${tower.y}`}
+                position={[wx, 0, wz]}
+                width={tower.width}
+                depth={tower.depth}
+                height={tower.height}
+                bodyColor={tower.body}
+                accentColor={tower.accent}
+                windowColor={tower.window}
+              />
+            );
+          })}
         </>
       ) : null}
+
+      {[
+        { x: 120, y: -95, width: 1.7, depth: 1.55, height: 2.35, body: "#374151", accent: "#111827", window: "#c4b5fd" },
+        { x: 430, y: -110, width: 1.58, depth: 1.42, height: 2.1, body: "#4b5563", accent: "#1f2937", window: "#bfdbfe" },
+        { x: 880, y: -120, width: 2.2, depth: 1.8, height: 3.25, body: "#334155", accent: "#0f172a", window: "#fde68a" },
+        { x: 1340, y: -108, width: 1.62, depth: 1.48, height: 2.2, body: "#475569", accent: "#1e293b", window: "#93c5fd" },
+        { x: 1670, y: -92, width: 1.74, depth: 1.52, height: 2.55, body: "#3f3f46", accent: "#18181b", window: "#e9d5ff" },
+      ].map((tower) => {
+        const [wx, , wz] = toWorld(tower.x, tower.y);
+        return (
+          <TowerBlock
+            key={`skyline-tower-${tower.x}-${tower.y}`}
+            position={[wx, 0, wz]}
+            width={tower.width}
+            depth={tower.depth}
+            height={tower.height}
+            bodyColor={tower.body}
+            accentColor={tower.accent}
+            windowColor={tower.window}
+          />
+        );
+      })}
+
+      {[
+        { x: 260, y: LOCAL_OFFICE_CANVAS_HEIGHT + 40, width: 1.35, depth: 0.98, height: 1.05, body: "#e5c9a8", roof: "#7b5e57", door: "#5d4037", window: "#fef3c7" },
+        { x: 540, y: LOCAL_OFFICE_CANVAS_HEIGHT + 46, width: 1.42, depth: 1.02, height: 1.12, body: "#c4d7b2", roof: "#5f7a61", door: "#39503d", window: "#dcfce7" },
+        { x: 1320, y: LOCAL_OFFICE_CANVAS_HEIGHT + 44, width: 1.4, depth: 1, height: 1.1, body: "#cdb4db", roof: "#6b4f85", door: "#433255", window: "#e9d5ff" },
+        { x: 1580, y: LOCAL_OFFICE_CANVAS_HEIGHT + 40, width: 1.32, depth: 0.96, height: 1.04, body: "#c6d8ef", roof: "#4b5d73", door: "#314152", window: "#dbeafe" },
+      ].map((house) => {
+        const [wx, , wz] = toWorld(house.x, house.y);
+        return (
+          <TownhouseBlock
+            key={`perimeter-townhouse-${house.x}-${house.y}`}
+            position={[wx, 0, wz]}
+            rotationY={Math.PI}
+            width={house.width}
+            depth={house.depth}
+            height={house.height}
+            bodyColor={house.body}
+            roofColor={house.roof}
+            doorColor={house.door}
+            windowColor={house.window}
+          />
+        );
+      })}
 
       {gymZoneFloorWidth > 0 && roomZoneFloorHeight > 0 ? (
         <>
