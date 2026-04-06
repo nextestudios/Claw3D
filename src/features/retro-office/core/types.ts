@@ -112,6 +112,18 @@ export type Picture3dRecipe = {
   primitives: Picture3dPrimitive[];
 };
 
+export type PictureVisualSummary = {
+  palette: {
+    dominantColor: string;
+    accentColor: string;
+  };
+  aspectRatio: number;
+  pixelWidth: number;
+  pixelHeight: number;
+  occupancyRows: string[];
+  featureHints: string[];
+};
+
 export type PicturePropAsset = {
   fileName: string;
   imageDataUrl: string;
@@ -124,6 +136,7 @@ export type PicturePropAsset = {
   provider: string;
   model: string;
   summary: string;
+  visualSummary?: PictureVisualSummary;
   recipe: Picture3dRecipe;
 };
 

@@ -1,178 +1,287 @@
-import type { Picture3dRecipe } from "@/features/retro-office/core/types";
+import { buildAgentMainSessionKey, type GatewayClient } from "@/lib/gateway/GatewayClient";
+import {
+  createGatewayAgent,
+  removeGatewayAgentFromConfigOnly,
+  updateGatewayAgentOverrides,
+} from "@/lib/gateway/agentConfig";
+import type {
+  Picture3dRecipe,
+  Picture3dPrimitive,
+} from "@/features/retro-office/core/types";
 
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_PICTURE_3D_MODEL = "gpt-4o-mini";
+const PICTURE_MODEL_AGENT_NAME = "Picture Modeler";
 export const MAX_PICTURE_MODEL_UPLOAD_BYTES = 12 * 1024 * 1024;
-
-type GeneratePictureModelParams = {
-  imageDataUrl: string;
-  fileName?: string;
-  mimeType?: string;
-};
-
-const generatedPrimitiveSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    kind: {
-      type: "string",
-      enum: ["box", "cylinder", "sphere"],
-    },
-    position: {
-      type: "array",
-      minItems: 3,
-      maxItems: 3,
-      items: { type: "number" },
-    },
-    rotation: {
-      type: "array",
-      minItems: 3,
-      maxItems: 3,
-      items: { type: "number" },
-    },
-    material: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        color: { type: "string" },
-        roughness: { type: "number" },
-        metalness: { type: "number" },
-      },
-      required: ["color"],
-    },
-    size: {
-      type: "array",
-      minItems: 3,
-      maxItems: 3,
-      items: { type: "number" },
-    },
-    radiusTop: { type: "number" },
-    radiusBottom: { type: "number" },
-    height: { type: "number" },
-    radius: { type: "number" },
-    radialSegments: { type: "number" },
-    widthSegments: { type: "number" },
-    heightSegments: { type: "number" },
-  },
-  required: ["kind", "position", "material"],
-} as const;
-
-const generatedModelSchema = {
-  name: "picture_to_3d_office_asset",
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      title: { type: "string" },
-      summary: { type: "string" },
-      footprintMeters: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          width: { type: "number" },
-          depth: { type: "number" },
-          height: { type: "number" },
-        },
-        required: ["width", "depth", "height"],
-      },
-      primitives: {
-        type: "array",
-        minItems: 3,
-        maxItems: 16,
-        items: generatedPrimitiveSchema,
-      },
-    },
-    required: ["title", "summary", "footprintMeters", "primitives"],
-  },
-  strict: true,
-} as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
 
-const extractStructuredOutput = (payload: unknown): Picture3dRecipe | null => {
-  if (!isRecord(payload)) return null;
-  const choices = Array.isArray(payload.choices) ? payload.choices : [];
-  const firstChoice = choices[0];
-  if (!isRecord(firstChoice)) return null;
-  const message = isRecord(firstChoice.message) ? firstChoice.message : null;
-  const content = message?.content;
-  if (typeof content === "string" && content.trim()) {
-    try {
-      return JSON.parse(content) as Picture3dRecipe;
-    } catch {
-      return null;
-    }
+const resolveRunId = (payload: unknown): string => {
+  if (!isRecord(payload)) {
+    throw new Error("Gateway returned an invalid chat.send response.");
   }
-  const parsed = message && "parsed" in message ? message.parsed : null;
-  return isRecord(parsed) ? (parsed as Picture3dRecipe) : null;
+  const runId = typeof payload.runId === "string" ? payload.runId.trim() : "";
+  if (!runId) {
+    throw new Error("Gateway returned an invalid chat.send response (missing runId).");
+  }
+  return runId;
 };
 
-export const generatePictureModelFromImage = async ({
-  imageDataUrl,
-}: GeneratePictureModelParams): Promise<Picture3dRecipe> => {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("Missing OPENAI_API_KEY for AI 3D generation.");
+const resolveMainKey = async (client: GatewayClient): Promise<string> => {
+  const result = (await client.call("agents.list", {})) as { mainKey?: unknown };
+  return typeof result?.mainKey === "string" && result.mainKey.trim()
+    ? result.mainKey.trim()
+    : "main";
+};
+
+const escapeForPrompt = (value: string) => JSON.stringify(value);
+
+export const buildPictureModelGatewayPrompt = (summary: {
+  fileName: string;
+  aspectRatio: number;
+  dominantColor: string;
+  accentColor: string;
+  pixelWidth: number;
+  pixelHeight: number;
+  summaryText: string;
+}) =>
+  [
+    "Create a low-poly 3D office asset recipe from the following visual summary.",
+    "Return ONLY valid JSON with this exact shape:",
+    "{",
+    '  "title": string,',
+    '  "summary": string,',
+    '  "footprintMeters": { "width": number, "depth": number, "height": number },',
+    '  "primitives": [',
+    "    {",
+    '      "kind": "box" | "cylinder" | "sphere",',
+    '      "position": [x, y, z],',
+    '      "rotation": [x, y, z],',
+    '      "material": { "color": "#rrggbb", "roughness": number, "metalness": number },',
+    '      "size"?: [x, y, z],',
+    '      "radiusTop"?: number,',
+    '      "radiusBottom"?: number,',
+    '      "height"?: number,',
+    '      "radius"?: number,',
+    '      "radialSegments"?: number,',
+    '      "widthSegments"?: number,',
+    '      "heightSegments"?: number',
+    "    }",
+    "  ]",
+    "}",
+    "",
+    "Constraints:",
+    "1. 3 to 12 primitives only.",
+    "2. The asset must be freestanding and stable on the floor.",
+    "3. Use a matte retro office furniture style.",
+    "4. Prefer chunky simplified silhouettes over fine detail.",
+    "5. Use only boxes, cylinders, and spheres.",
+    "6. Keep the object at desk collectible scale.",
+    "7. Do not include markdown fences or explanation text.",
+    "",
+    `Source file: ${escapeForPrompt(summary.fileName)}`,
+    `Aspect ratio: ${summary.aspectRatio.toFixed(4)}`,
+    `Dominant color: ${summary.dominantColor}`,
+    `Accent color: ${summary.accentColor}`,
+    `Pixel size: ${summary.pixelWidth}x${summary.pixelHeight}`,
+    `Visual summary: ${escapeForPrompt(summary.summaryText)}`,
+  ].join("\n");
+
+const normalizeNumber = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+const normalizeColor = (value: unknown, fallback: string) =>
+  typeof value === "string" && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim())
+    ? value.trim().toLowerCase()
+    : fallback;
+
+const normalizeVector = (
+  value: unknown,
+  fallback: [number, number, number],
+): [number, number, number] => {
+  if (!Array.isArray(value) || value.length < 3) return fallback;
+  return [
+    normalizeNumber(value[0], fallback[0]),
+    normalizeNumber(value[1], fallback[1]),
+    normalizeNumber(value[2], fallback[2]),
+  ];
+};
+
+const normalizePrimitive = (
+  primitive: unknown,
+  fallbackColor: string,
+): Picture3dPrimitive | null => {
+  if (!isRecord(primitive)) return null;
+  const kind =
+    primitive.kind === "cylinder" || primitive.kind === "sphere" || primitive.kind === "box"
+      ? primitive.kind
+      : "box";
+  const material = isRecord(primitive.material) ? primitive.material : {};
+  const baseMaterial = {
+    color: normalizeColor(material.color, fallbackColor),
+    roughness: normalizeNumber(material.roughness, 0.76),
+    metalness: normalizeNumber(material.metalness, 0.08),
+  };
+  const position = normalizeVector(primitive.position, [0, 0.5, 0]);
+  const rotation = normalizeVector(primitive.rotation, [0, 0, 0]);
+  if (kind === "cylinder") {
+    return {
+      kind,
+      position,
+      rotation,
+      material: baseMaterial,
+      radiusTop: normalizeNumber(primitive.radiusTop, 0.16),
+      radiusBottom: normalizeNumber(primitive.radiusBottom, 0.18),
+      height: normalizeNumber(primitive.height, 0.6),
+      radialSegments: normalizeNumber(primitive.radialSegments, 16),
+    };
   }
+  if (kind === "sphere") {
+    return {
+      kind,
+      position,
+      rotation,
+      material: baseMaterial,
+      radius: normalizeNumber(primitive.radius, 0.24),
+      widthSegments: normalizeNumber(primitive.widthSegments, 16),
+      heightSegments: normalizeNumber(primitive.heightSegments, 16),
+    };
+  }
+  return {
+    kind: "box",
+    position,
+    rotation,
+    material: baseMaterial,
+    size: normalizeVector(primitive.size, [0.4, 0.4, 0.4]),
+  };
+};
 
-  const baseUrl =
-    process.env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL;
-  const model =
-    process.env.OPENAI_PICTURE_3D_MODEL?.trim() || DEFAULT_PICTURE_3D_MODEL;
+const extractAssistantText = (payload: unknown): string => {
+  if (!isRecord(payload)) return "";
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!isRecord(message)) continue;
+    const role = typeof message.role === "string" ? message.role.trim() : "";
+    if (role !== "assistant") continue;
+    const content = typeof message.content === "string" ? message.content.trim() : "";
+    if (content) return content;
+  }
+  return "";
+};
 
-  const response = await fetch(
-    `${baseUrl.replace(/\/$/, "")}/chat/completions`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      body: JSON.stringify({
-        model,
-        response_format: {
-          type: "json_schema",
-          json_schema: generatedModelSchema,
-        },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You convert a reference image into a compact low-poly office sculpture recipe. Output only structured JSON. Use 3-16 simple primitives. Match a matte retro office furniture style with chunky shapes, no thin details, and plausible freestanding balance. Return only boxes, cylinders, and spheres.",
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Recreate the uploaded image as a stylized 3D object that feels like it belongs next to the office furniture and avatars in a retro Three.js office. Use simple primitives, strong silhouette, and no textures. Keep all dimensions normalized to roughly desk-scale collectible proportions and prefer grounded, freestanding forms.",
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: imageDataUrl,
-                },
-              },
-            ],
-          },
-        ],
-      }),
+const stripCodeFences = (value: string) =>
+  value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+const parseRecipeFromHistory = (
+  payload: unknown,
+  summary: {
+    fileName: string;
+    summaryText: string;
+    dominantColor: string;
+    accentColor: string;
+  },
+): Picture3dRecipe => {
+  const assistantText = stripCodeFences(extractAssistantText(payload));
+  if (!assistantText) {
+    throw new Error("OpenClaw did not return a 3D recipe.");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(assistantText);
+  } catch {
+    throw new Error("OpenClaw returned invalid JSON for the 3D recipe.");
+  }
+  if (!isRecord(parsed)) {
+    throw new Error("OpenClaw returned an invalid 3D recipe payload.");
+  }
+  const footprint = isRecord(parsed.footprintMeters) ? parsed.footprintMeters : {};
+  const rawPrimitives = Array.isArray(parsed.primitives) ? parsed.primitives : [];
+  const primitives = rawPrimitives
+    .slice(0, 12)
+    .map((primitive, index) =>
+      normalizePrimitive(
+        primitive,
+        index % 2 === 0 ? summary.dominantColor : summary.accentColor,
+      ),
+    )
+    .filter((primitive): primitive is Picture3dPrimitive => primitive !== null);
+  if (primitives.length === 0) {
+    throw new Error("OpenClaw returned a 3D recipe without usable primitives.");
+  }
+  return {
+    title:
+      typeof parsed.title === "string" && parsed.title.trim()
+        ? parsed.title.trim()
+        : `${summary.fileName} sculpture`,
+    summary:
+      typeof parsed.summary === "string" && parsed.summary.trim()
+        ? parsed.summary.trim()
+        : summary.summaryText,
+    footprintMeters: {
+      width: normalizeNumber(footprint.width, 1),
+      depth: normalizeNumber(footprint.depth, 0.8),
+      height: normalizeNumber(footprint.height, 1.4),
     },
-  );
+    primitives,
+  };
+};
 
-  if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).trim();
-    throw new Error(detail || "AI picture-to-3D generation failed.");
-  }
+export const generatePictureModelViaGateway = async (params: {
+  client: GatewayClient;
+  summary: {
+    fileName: string;
+    aspectRatio: number;
+    dominantColor: string;
+    accentColor: string;
+    pixelWidth: number;
+    pixelHeight: number;
+    summaryText: string;
+  };
+}): Promise<Picture3dRecipe> => {
+  let helperAgentId: string | null = null;
+  try {
+    const created = await createGatewayAgent({
+      client: params.client,
+      name: `${PICTURE_MODEL_AGENT_NAME} ${Date.now()}`,
+    });
+    helperAgentId = created.id;
 
-  const payload = (await response.json()) as unknown;
-  const parsed = extractStructuredOutput(payload);
-  if (!parsed) {
-    throw new Error(
-      "AI picture-to-3D generation returned invalid structured output.",
-    );
+    await updateGatewayAgentOverrides({
+      client: params.client,
+      agentId: helperAgentId,
+      overrides: {
+        tools: {
+          alsoAllow: ["group:runtime"],
+          deny: ["group:web", "group:fs"],
+        },
+      },
+    });
+
+    const mainKey = await resolveMainKey(params.client);
+    const sessionKey = buildAgentMainSessionKey(helperAgentId, mainKey);
+    const sendResult = await params.client.call("chat.send", {
+      sessionKey,
+      message: buildPictureModelGatewayPrompt(params.summary),
+      deliver: false,
+      idempotencyKey: `picture-model:${Date.now()}`,
+    });
+    const runId = resolveRunId(sendResult);
+    await params.client.call("agent.wait", { runId, timeoutMs: 120_000 });
+    const history = await params.client.call("chat.history", {
+      sessionKey,
+      limit: 12,
+    });
+    return parseRecipeFromHistory(history, params.summary);
+  } finally {
+    if (helperAgentId) {
+      try {
+        await removeGatewayAgentFromConfigOnly({
+          client: params.client,
+          agentId: helperAgentId,
+        });
+      } catch {
+        // Best-effort cleanup for temporary picture-model agents.
+      }
+    }
   }
-  return parsed;
 };

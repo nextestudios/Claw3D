@@ -5000,6 +5000,9 @@ export function RetroOffice3D({
         const formData = new FormData();
         formData.set("image", file);
         formData.set("previewDataUrl", previewAsset.imageDataUrl);
+        formData.set("gatewayUrl", gatewayUrl);
+        formData.set("gatewayToken", gatewayToken);
+        formData.set("adapterType", activeAdapterType);
         const response = await fetch("/api/office/picture-model", {
           method: "POST",
           body: formData,
@@ -5024,7 +5027,7 @@ export function RetroOffice3D({
         setPictureDraftStatus("idle");
       }
     },
-    [],
+    [activeAdapterType, gatewayToken, gatewayUrl],
   );
 
   const handlePictureGlbDownload = useCallback(async (asset: PicturePropAsset) => {

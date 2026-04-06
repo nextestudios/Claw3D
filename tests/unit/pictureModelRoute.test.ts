@@ -1,48 +1,76 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const connectMock = vi.fn(async function connect() {});
+const disconnectMock = vi.fn(function disconnect() {});
+const gatewayClientCtorMock = vi.fn(function GatewayClientMock(
+  this: Record<string, unknown>,
+) {
+  this.connect = connectMock;
+  this.disconnect = disconnectMock;
+});
+
+vi.mock("@/lib/gateway/GatewayClient", () => ({
+  GatewayClient: gatewayClientCtorMock,
+}));
+
 vi.mock("@/lib/office/pictureModelGeneration", () => ({
-  MAX_PICTURE_MODEL_UPLOAD_BYTES: 8 * 1024 * 1024,
-  generatePictureModelFromImage: vi.fn().mockResolvedValue({
-    asset: {
-      accentColor: "#f59e0b",
-      aspectRatio: 1,
-      dominantColor: "#7c5c3b",
-      fileName: "demo.png",
-      imageDataUrl: "data:image/webp;base64,abc",
-      model: "gpt-4o-mini",
-      pixelHeight: 32,
-      pixelWidth: 32,
-      provider: "openai-compatible",
-      recipe: {
-        footprintMeters: {
-          depth: 0.6,
-          height: 1.2,
-          width: 0.72,
-        },
-        primitives: [
-          {
-            kind: "box",
-            material: {
-              color: "#7c5c3b",
-              metalness: 0.08,
-              roughness: 0.78,
-            },
-            position: [0, 0.4, 0],
-            size: [0.72, 0.8, 0.32],
+  generatePictureModelViaGateway: vi.fn(
+    async function generatePictureModelViaGatewayMock() {
+      return {
+        fileName: "demo.png",
+        imageDataUrl: "data:image/webp;base64,abc",
+        sourceImageDataUrl: "data:image/png;base64,abc",
+        aspectRatio: 1,
+        dominantColor: "#7c5c3b",
+        accentColor: "#f59e0b",
+        pixelWidth: 32,
+        pixelHeight: 32,
+        provider: "openclaw-chat",
+        model: "gateway-session",
+        summary: "Generated through OpenClaw chat.send.",
+        visualSummary: {
+          palette: {
+            dominantColor: "#7c5c3b",
+            accentColor: "#f59e0b",
           },
-        ],
-        summary: "Chunky desk sculpture.",
-        title: "Desk sculpture",
-      },
-      summary: "Chunky desk sculpture.",
+          aspectRatio: 1,
+          pixelWidth: 32,
+          pixelHeight: 32,
+          occupancyRows: ["....", ".##.", ".##.", "...."],
+          featureHints: ["single centered mass", "rounded highlight"],
+        },
+        recipe: {
+          title: "Desk sculpture",
+          summary: "Chunky low-poly office object.",
+          footprintMeters: { width: 1, depth: 0.7, height: 1.4 },
+          primitives: [
+            {
+              kind: "box",
+              size: [0.8, 0.4, 0.6],
+              position: [0, 0.2, 0],
+              material: { color: "#7c5c3b" },
+            },
+            {
+              kind: "box",
+              size: [0.4, 0.8, 0.4],
+              position: [0, 0.8, 0],
+              material: { color: "#f59e0b" },
+            },
+            {
+              kind: "sphere",
+              radius: 0.18,
+              position: [0, 1.28, 0],
+              material: { color: "#f0d7b1" },
+            },
+          ],
+        },
+      };
     },
-  }),
+  ),
+  MAX_PICTURE_MODEL_UPLOAD_BYTES: 12 * 1024 * 1024,
 }));
 
 const { POST } = await import("@/app/api/office/picture-model/route");
-const { MAX_PICTURE_MODEL_UPLOAD_BYTES } = await import(
-  "@/lib/office/pictureModelGeneration"
-);
 
 function makeImageFile(byteLength: number, type = "image/png") {
   return {
@@ -55,6 +83,9 @@ function makeImageFile(byteLength: number, type = "image/png") {
 function mockRequest(opts: {
   contentLength?: string;
   imageFile?: ReturnType<typeof makeImageFile> | null;
+  previewDataUrl?: string | null;
+  gatewayUrl?: string | null;
+  gatewayToken?: string | null;
 }): Request {
   const headersMap = new Map<string, string>();
   if (opts.contentLength !== undefined) {
@@ -62,8 +93,23 @@ function mockRequest(opts: {
   }
 
   const image = opts.imageFile ?? null;
+  const previewDataUrl =
+    opts.previewDataUrl === undefined
+      ? "data:image/webp;base64,preview"
+      : opts.previewDataUrl;
+  const gatewayUrl =
+    opts.gatewayUrl === undefined ? "[REDACTED]" : opts.gatewayUrl;
+  const gatewayToken =
+    opts.gatewayToken === undefined ? "" : opts.gatewayToken;
+
   const fakeFormData = {
-    get: (key: string) => (key === "image" ? image : null),
+    get: (key: string) => {
+      if (key === "image") return image;
+      if (key === "previewDataUrl") return previewDataUrl;
+      if (key === "gatewayUrl") return gatewayUrl;
+      if (key === "gatewayToken") return gatewayToken;
+      return null;
+    },
   };
 
   return {
@@ -79,12 +125,12 @@ describe("POST /api/office/picture-model", () => {
 
   it("returns 413 for obviously oversized uploads", async () => {
     const request = mockRequest({
-      contentLength: String(MAX_PICTURE_MODEL_UPLOAD_BYTES + 4096),
+      contentLength: String(12 * 1024 * 1024 + 4096),
       imageFile: makeImageFile(1024),
+      gatewayUrl: "[REDACTED]",
     });
 
     const response = await POST(request);
-
     expect(response.status).toBe(413);
   });
 
@@ -97,32 +143,32 @@ describe("POST /api/office/picture-model", () => {
     });
   });
 
-  it("returns 400 for unsupported mime types", async () => {
+  it("returns 400 when the gateway url is missing", async () => {
     const response = await POST(
-      mockRequest({ imageFile: makeImageFile(1024, "application/pdf") }),
+      mockRequest({
+        imageFile: makeImageFile(1024),
+        gatewayUrl: null,
+      }),
     );
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringMatching(/only image uploads/i),
+      error: expect.stringMatching(/gatewayUrl is required/i),
     });
   });
 
-  it("returns generated asset payload for valid uploads", async () => {
+  it("connects through the gateway and returns generated asset payload", async () => {
     const response = await POST(
       mockRequest({ imageFile: makeImageFile(2048, "image/png") }),
     );
 
+    expect(gatewayClientCtorMock).toHaveBeenCalledTimes(1);
+    expect(connectMock).toHaveBeenCalledTimes(1);
+    expect(disconnectMock).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      asset: {
-        fileName: "demo.png",
-        pixelWidth: 32,
-        recipe: {
-          primitives: expect.any(Array),
-          title: "Desk sculpture",
-        },
-      },
+      fileName: "demo.png",
+      provider: "openclaw-chat",
     });
   });
 });

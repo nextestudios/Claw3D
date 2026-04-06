@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
+import { GatewayClient } from "@/lib/gateway/GatewayClient";
 import {
-  generatePictureModelFromImage,
+  generatePictureModelViaGateway,
   MAX_PICTURE_MODEL_UPLOAD_BYTES,
 } from "@/lib/office/pictureModelGeneration";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const gatewayClient = new GatewayClient();
   try {
     const MULTIPART_OVERHEAD_ALLOWANCE = 1024;
     const contentLengthHeader = request.headers.get("content-length");
@@ -27,6 +29,10 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const image = formData.get("image");
+    const previewDataUrl = formData.get("previewDataUrl");
+    const gatewayUrl = formData.get("gatewayUrl");
+    const gatewayToken = formData.get("gatewayToken");
+
     if (
       image === null ||
       typeof image !== "object" ||
@@ -37,6 +43,19 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (typeof previewDataUrl !== "string" || !previewDataUrl.trim()) {
+      return NextResponse.json(
+        { error: "previewDataUrl is required." },
+        { status: 400 },
+      );
+    }
+    if (typeof gatewayUrl !== "string" || !gatewayUrl.trim()) {
+      return NextResponse.json(
+        { error: "gatewayUrl is required." },
+        { status: 400 },
+      );
+    }
+
     const imageFile = image as File;
     const arrayBuffer = await imageFile.arrayBuffer();
     const byteLength = arrayBuffer.byteLength;
@@ -59,12 +78,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const base64 = Buffer.from(arrayBuffer).toString("base64");
-    const imageDataUrl = `data:${imageFile.type};base64,${base64}`;
-    const result = await generatePictureModelFromImage({
-      imageDataUrl,
-      fileName: imageFile.name,
-      mimeType: imageFile.type,
+    await gatewayClient.connect({
+      gatewayUrl,
+      token: typeof gatewayToken === "string" ? gatewayToken : "",
+      authScopeKey: gatewayUrl,
+      disableDeviceAuth: false,
+    });
+
+    Buffer.from(arrayBuffer).toString("base64");
+    const result = await generatePictureModelViaGateway({
+      client: gatewayClient,
+      summary: {
+        fileName: imageFile.name,
+        aspectRatio: imageFile.size > 0 ? 1 : 1,
+        dominantColor: "#7c5c3b",
+        accentColor: "#f59e0b",
+        pixelWidth: 32,
+        pixelHeight: 32,
+        summaryText: previewDataUrl.trim(),
+      },
     });
 
     return NextResponse.json(result);
@@ -74,5 +106,7 @@ export async function POST(request: Request) {
         ? error.message
         : "Failed to generate the 3D model from the uploaded image.";
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    gatewayClient.disconnect();
   }
 }
