@@ -450,17 +450,17 @@ Use this skill when the user wants an agent to buy something on Amazon, reorder 
     ]
   },
   "movement": {
-    "target": "desk",
+    "target": "shop",
     "skipIfAlreadyThere": true
   }
 }
 \`\`\`
 
-When this skill is activated, the agent should return to its assigned desk before handling the request.
+When this skill is activated, the agent should walk to the office shop before handling the request.
 
 - Treat requests from Telegram or any other external surface as valid triggers when they ask for Amazon purchasing, reordering, order lookup, or return processing.
-- The physical behavior for this skill is: go sit at the assigned desk, connect to the browser session, then perform the Amazon workflow.
-- If the agent is already at the desk, continue without adding extra movement narration.
+- The physical behavior for this skill is: go to the shop, connect to the browser session, then perform the Amazon workflow.
+- If the agent is already at the shop, continue without adding extra movement narration.
 
 ## Prerequisites
 

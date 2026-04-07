@@ -140,6 +140,7 @@ import { HistoryPanel } from "@/features/office/components/panels/HistoryPanel";
 import { InboxPanel } from "@/features/office/components/panels/InboxPanel";
 import { KanbanDisabledPanel } from "@/features/office/components/panels/KanbanDisabledPanel";
 import { PlaybooksPanel } from "@/features/office/components/panels/PlaybooksPanel";
+import { ShopDisabledPanel } from "@/features/office/components/panels/ShopDisabledPanel";
 import { SkillsMarketplaceModal } from "@/features/office/components/panels/SkillsMarketplaceModal";
 import { TaskBoardPanel } from "@/features/office/components/panels/TaskBoardPanel";
 import { JukeboxPanel } from "@/features/spotify-jukebox/components/JukeboxPanel";
@@ -886,6 +887,7 @@ export function OfficeScreen({
         officeAgent: OfficeAgent;
         phoneBoothHeld: boolean;
         qaHeld: boolean;
+        shopHeld: boolean;
         smsBoothHeld: boolean;
       }
     >
@@ -989,6 +991,18 @@ export function OfficeScreen({
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [kanbanInstallPromptOpen, setKanbanInstallPromptOpen] = useState(false);
   const [kanbanInstallProgress, setKanbanInstallProgress] = useState<{
+    active: boolean;
+    percent: number;
+    message: string;
+    error: string | null;
+  }>({
+    active: false,
+    percent: 0,
+    message: "",
+    error: null,
+  });
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shopInstallProgress, setShopInstallProgress] = useState<{
     active: boolean;
     percent: number;
     message: string;
@@ -2806,6 +2820,10 @@ export function OfficeScreen({
         ...base.gymHoldByAgentId,
         ...skillTriggerHoldMaps.gymHoldByAgentId,
       },
+      shopHoldByAgentId: {
+        ...base.shopHoldByAgentId,
+        ...skillTriggerHoldMaps.shopHoldByAgentId,
+      },
       jukeboxHoldByAgentId: {
         ...base.jukeboxHoldByAgentId,
         ...skillTriggerHoldMaps.jukeboxHoldByAgentId,
@@ -2836,6 +2854,7 @@ export function OfficeScreen({
     phoneBoothHoldByAgentId,
     phoneCallByAgentId,
     qaHoldByAgentId,
+    shopHoldByAgentId,
     smsBoothHoldByAgentId,
     skillGymHoldByAgentId,
     textMessageByAgentId,
@@ -3713,6 +3732,7 @@ export function OfficeScreen({
         officeAgent: OfficeAgent;
         phoneBoothHeld: boolean;
         qaHeld: boolean;
+        shopHeld: boolean;
         smsBoothHeld: boolean;
       }
     >();
@@ -3722,6 +3742,7 @@ export function OfficeScreen({
       const gymHeld = Boolean(gymHoldByAgentId[agent.agentId]);
       const phoneBoothHeld = Boolean(phoneBoothHoldByAgentId[agent.agentId]);
       const qaHeld = Boolean(qaHoldByAgentId[agent.agentId]);
+      const shopHeld = Boolean(shopHoldByAgentId[agent.agentId]);
       const smsBoothHeld = Boolean(smsBoothHoldByAgentId[agent.agentId]);
       const cached = officeAgentCacheRef.current.get(agent.agentId);
       if (
@@ -3732,6 +3753,7 @@ export function OfficeScreen({
         cached.gymHeld === gymHeld &&
         cached.phoneBoothHeld === phoneBoothHeld &&
         cached.qaHeld === qaHeld &&
+        cached.shopHeld === shopHeld &&
         cached.smsBoothHeld === smsBoothHeld
       ) {
         nextCache.set(agent.agentId, cached);
@@ -3753,6 +3775,8 @@ export function OfficeScreen({
                   agent.runId ??
                   (qaHeld
                     ? `qa-hold-${agent.agentId}`
+                    : shopHeld
+                      ? `shop-hold-${agent.agentId}`
                     : smsBoothHeld
                       ? `text-hold-${agent.agentId}`
                     : phoneBoothHeld
@@ -3771,6 +3795,7 @@ export function OfficeScreen({
         officeAgent,
         phoneBoothHeld,
         qaHeld,
+        shopHeld,
         smsBoothHeld,
       });
       return officeAgent;
@@ -3783,6 +3808,7 @@ export function OfficeScreen({
     gymHoldByAgentId,
     phoneBoothHoldByAgentId,
     qaHoldByAgentId,
+    shopHoldByAgentId,
     smsBoothHoldByAgentId,
     state.agents,
     workingUntilByAgentId,
@@ -4023,6 +4049,15 @@ export function OfficeScreen({
       }) ?? null,
     [marketplace.skillsReport],
   );
+  const amazonOrderingSkill = useMemo<SkillStatusEntry | null>(
+    () =>
+      marketplace.skillsReport?.skills.find((skill) => {
+        const normalizedKey = skill.skillKey.trim().toLowerCase();
+        const normalizedName = skill.name.trim().toLowerCase();
+        return normalizedKey === "amazon-ordering" || normalizedName === "amazon";
+      }) ?? null,
+    [marketplace.skillsReport],
+  );
   const taskManagerSkill = useMemo<SkillStatusEntry | null>(
     () =>
       marketplace.skillsReport?.skills.find((skill) => {
@@ -4039,6 +4074,13 @@ export function OfficeScreen({
   const soundclawReady = useMemo(
     () => (soundclawSkill ? deriveSkillReadinessState(soundclawSkill) === "ready" : false),
     [soundclawSkill]
+  );
+  const amazonOrderingReady = useMemo(
+    () =>
+      amazonOrderingSkill
+        ? deriveSkillReadinessState(amazonOrderingSkill) === "ready"
+        : false,
+    [amazonOrderingSkill],
   );
 
   useEffect(() => {
@@ -4183,6 +4225,7 @@ export function OfficeScreen({
       agent.status === "running" ||
       deskHoldByAgentId[agent.agentId] ||
       gymHoldByAgentId[agent.agentId] ||
+      shopHoldByAgentId[agent.agentId] ||
       jukeboxHoldByAgentId[agent.agentId] ||
       phoneBoothHoldByAgentId[agent.agentId] ||
       smsBoothHoldByAgentId[agent.agentId] ||
@@ -4251,6 +4294,7 @@ export function OfficeScreen({
           monitorAgentId={monitorAgentId}
           monitorByAgentId={monitorByAgentId}
           githubSkill={githubSkill}
+          amazonOrderingEnabled={amazonOrderingReady}
           taskManagerEnabled={taskManagerReady}
           soundclawEnabled={soundclawReady}
           officeTitle={officeTitle}
@@ -4353,6 +4397,9 @@ export function OfficeScreen({
           onJukeboxInteract={() => {
             setJukeboxOpen(true);
           }}
+          onShopInteract={() => {
+            setShopOpen(true);
+          }}
           onKanbanInteract={() => {
             setKanbanInstallPromptOpen(true);
           }}
@@ -4395,6 +4442,63 @@ export function OfficeScreen({
                 setJukeboxOpen(false);
                 setMarketplaceOpen(true);
               }}
+            />
+          )
+        ) : null}
+        {shopOpen ? (
+          amazonOrderingReady ? null : (
+            <ShopDisabledPanel
+              onClose={() => setShopOpen(false)}
+              onInstall={() => {
+                const targetAgentId =
+                  (selectedChatAgentId ?? state.selectedAgentId ?? state.agents[0]?.agentId ?? "")
+                    .trim() || null;
+                setShopInstallProgress({
+                  active: true,
+                  percent: 8,
+                  message: "Starting AMAZON skill installation.",
+                  error: null,
+                });
+                void (async () => {
+                  try {
+                    await marketplace.handleInstallPackagedSkillAndEnable({
+                      skillKey: "amazon-ordering",
+                      agentId: targetAgentId,
+                      onProgress: ({ percent, message }) => {
+                        setShopInstallProgress({
+                          active: true,
+                          percent,
+                          message:
+                            message
+                              .replaceAll("task-manager", "AMAZON")
+                              .replaceAll("Task-manager", "AMAZON") || message,
+                          error: null,
+                        });
+                      },
+                    });
+                    setShopInstallProgress({
+                      active: false,
+                      percent: 0,
+                      message: "",
+                      error: null,
+                    });
+                    setShopOpen(false);
+                  } catch (error) {
+                    setShopInstallProgress((current) => ({
+                      ...current,
+                      active: false,
+                      error:
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to install AMAZON.",
+                    }));
+                  }
+                })();
+              }}
+              installing={shopInstallProgress.active}
+              progressPercent={shopInstallProgress.percent}
+              progressMessage={shopInstallProgress.message}
+              errorMessage={shopInstallProgress.error}
             />
           )
         ) : null}

@@ -127,6 +127,7 @@ export type OfficeAnimationState = {
   phoneBoothHoldByAgentId: BooleanByAgentId;
   phoneCallByAgentId: PhoneCallByAgentId;
   qaHoldByAgentId: BooleanByAgentId;
+  shopHoldByAgentId: BooleanByAgentId;
   smsBoothHoldByAgentId: BooleanByAgentId;
   skillGymHoldByAgentId: BooleanByAgentId;
   streamingByAgentId: BooleanByAgentId;
@@ -1351,6 +1352,7 @@ export const buildOfficeAnimationState = (params: {
   const jukeboxHoldByAgentId: BooleanByAgentId = {};
   const phoneBoothHoldByAgentId: BooleanByAgentId = {};
   const phoneCallByAgentId: PhoneCallByAgentId = {};
+  const shopHoldByAgentId: BooleanByAgentId = {};
   const smsBoothHoldByAgentId: BooleanByAgentId = {};
   const streamingByAgentId: BooleanByAgentId = {};
   const textMessageByAgentId: TextMessageByAgentId = {};
@@ -1407,6 +1409,7 @@ export const buildOfficeAnimationState = (params: {
     phoneBoothHoldByAgentId,
     phoneCallByAgentId,
     qaHoldByAgentId: params.state.qaHoldByAgentId,
+    shopHoldByAgentId,
     smsBoothHoldByAgentId,
     skillGymHoldByAgentId: params.state.skillGymHoldByAgentId,
     streamingByAgentId,

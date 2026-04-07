@@ -23,7 +23,7 @@ describe("skill triggers", () => {
     );
 
     expect(amazonTrigger).not.toBeUndefined();
-    expect(amazonTrigger?.movementTarget).toBe("desk");
+    expect(amazonTrigger?.movementTarget).toBe("shop");
     expect(amazonTrigger?.activationPhrases).toContain("amazon");
     expect(amazonTrigger?.activationPhrases).toContain("amazon return");
     expect(todoTrigger).not.toBeUndefined();
@@ -48,7 +48,7 @@ describe("skill triggers", () => {
     });
 
     expect(matched?.skillKey).toBe("amazon-ordering");
-    expect(matched?.movementTarget).toBe("desk");
+    expect(matched?.movementTarget).toBe("shop");
   });
 
   it("does not match triggers when the agent is not running", () => {
@@ -76,7 +76,7 @@ describe("skill triggers", () => {
     expect(
       DEFAULT_SKILL_TRIGGER_FALLBACKS_BY_SKILL_KEY["amazon-ordering"]
         ?.movementTarget,
-    ).toBe("desk");
+    ).toBe("shop");
     expect(
       DEFAULT_SKILL_TRIGGER_FALLBACKS_BY_SKILL_KEY["todo-board"]
         ?.movementTarget,
@@ -89,12 +89,14 @@ describe("skill triggers", () => {
       "agent-b": "github",
       "agent-c": "gym",
       "agent-d": "qa_lab",
+      "agent-e": "shop",
     });
 
     expect(holdMaps.deskHoldByAgentId).toEqual({ "agent-a": true });
     expect(holdMaps.githubHoldByAgentId).toEqual({ "agent-b": true });
     expect(holdMaps.gymHoldByAgentId).toEqual({ "agent-c": true });
     expect(holdMaps.qaHoldByAgentId).toEqual({ "agent-d": true });
+    expect(holdMaps.shopHoldByAgentId).toEqual({ "agent-e": true });
     expect(holdMaps.skillGymHoldByAgentId).toEqual({ "agent-c": true });
   });
 });

@@ -60,6 +60,13 @@ const DEFAULT_JUKEBOX: FurnitureSeed = {
   facing: 90,
 };
 
+const DEFAULT_SHOP: FurnitureSeed = {
+  type: "shop",
+  x: 560,
+  y: 210,
+  facing: 270,
+};
+
 const DEFAULT_KANBAN_BOARD: FurnitureSeed = {
   type: "kanban_board",
   x: 460,
@@ -500,6 +507,7 @@ const DEFAULT_FURNITURE: FurnitureSeed[] = [
   { type: "beanbag", x: 1000, y: 330, color: "#e65100", facing: 90 },
   { type: "beanbag", x: 1000, y: 410, color: "#1565c0", facing: 90 },
   DEFAULT_ATM_MACHINE,
+  DEFAULT_SHOP,
   DEFAULT_PHONE_BOOTH,
   DEFAULT_KANBAN_BOARD,
   { type: "whiteboard", x: 40, y: 200, w: 10, h: 60 },
@@ -604,6 +612,20 @@ export const ensureOfficeAtm = (items: FurnitureItem[]): FurnitureItem[] => {
 export const ensureOfficeJukebox = (items: FurnitureItem[]): FurnitureItem[] => {
   if (items.some((item) => item.type === "jukebox")) return items;
   return [...items, { ...DEFAULT_JUKEBOX, _uid: nextUid() }];
+};
+
+export const ensureOfficeShop = (items: FurnitureItem[]): FurnitureItem[] => {
+  let found = false;
+  const nextItems = items.map((item) => {
+    if (item.type !== "shop") return item;
+    found = true;
+    if (item.x === 520 && item.y === 180) {
+      return { ...item, x: DEFAULT_SHOP.x, y: DEFAULT_SHOP.y, facing: DEFAULT_SHOP.facing };
+    }
+    return item;
+  });
+  if (found) return nextItems;
+  return [...nextItems, { ...DEFAULT_SHOP, _uid: nextUid() }];
 };
 
 export const ensureOfficeKanbanBoard = (items: FurnitureItem[]): FurnitureItem[] => {
