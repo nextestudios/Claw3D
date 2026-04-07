@@ -168,7 +168,7 @@ export function ShopModel({
           </Text>
         </Billboard>
 
-        <Billboard position={[0, 1.98, 0]} follow={false}>
+        <Billboard position={[0, 1.98, 0]}>
           <Text
             fontSize={0.11}
             color={enabled ? "#fde68a" : "#facc15"}
@@ -185,7 +185,7 @@ export function ShopModel({
           </Text>
         </Billboard>
 
-        <Billboard position={[0, 1.76, 0]} follow={false}>
+        <Billboard position={[0, 1.76, 0]}>
           <Text
             fontSize={0.11}
             color={enabled ? "#fde68a" : "#b0b0b0"}
@@ -216,7 +216,7 @@ export function ShopModel({
         ))}
 
         {!enabled && (localHovered || isHovered) ? (
-          <Billboard position={[0, 1.78, 0]} follow={false}>
+          <Billboard position={[0, 1.78, 0]}>
             <Text
               fontSize={0.07}
               color="#facc15"
