@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const connectMock = vi.fn(async function connect() {});
-const disconnectMock = vi.fn(function disconnect() {});
-const gatewayClientCtorMock = vi.fn(function GatewayClientMock(
+const closeMock = vi.fn(function close() {});
+const gatewayClientCtorMock = vi.fn(function NodeGatewayClientMock(
   this: Record<string, unknown>,
 ) {
   this.connect = connectMock;
-  this.disconnect = disconnectMock;
+  this.close = closeMock;
 });
 
-vi.mock("@/lib/gateway/GatewayClient", () => ({
-  GatewayClient: gatewayClientCtorMock,
+vi.mock("@/lib/gateway/nodeGatewayClient", () => ({
+  NodeGatewayClient: gatewayClientCtorMock,
 }));
 
 vi.mock("@/lib/office/pictureModelGeneration", () => ({
@@ -164,7 +164,7 @@ describe("POST /api/office/picture-model", () => {
 
     expect(gatewayClientCtorMock).toHaveBeenCalledTimes(1);
     expect(connectMock).toHaveBeenCalledTimes(1);
-    expect(disconnectMock).toHaveBeenCalledTimes(1);
+    expect(closeMock).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       fileName: "demo.png",

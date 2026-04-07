@@ -1,4 +1,5 @@
-import { buildAgentMainSessionKey, type GatewayClient } from "@/lib/gateway/GatewayClient";
+import { buildAgentMainSessionKey } from "@/lib/gateway/sessionKeys";
+import type { GatewayClient } from "@/lib/gateway/GatewayClient";
 import {
   createGatewayAgent,
   removeGatewayAgentFromConfigOnly,
@@ -11,6 +12,10 @@ import type {
 
 const PICTURE_MODEL_AGENT_NAME = "Picture Modeler";
 export const MAX_PICTURE_MODEL_UPLOAD_BYTES = 12 * 1024 * 1024;
+
+type GatewayLikeClient = {
+  call<T = unknown>(method: string, params: unknown): Promise<T>;
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -26,7 +31,7 @@ const resolveRunId = (payload: unknown): string => {
   return runId;
 };
 
-const resolveMainKey = async (client: GatewayClient): Promise<string> => {
+const resolveMainKey = async (client: GatewayLikeClient): Promise<string> => {
   const result = (await client.call("agents.list", {})) as { mainKey?: unknown };
   return typeof result?.mainKey === "string" && result.mainKey.trim()
     ? result.mainKey.trim()
@@ -227,7 +232,7 @@ const parseRecipeFromHistory = (
 };
 
 export const generatePictureModelViaGateway = async (params: {
-  client: GatewayClient;
+  client: GatewayLikeClient;
   summary: {
     fileName: string;
     aspectRatio: number;
@@ -239,15 +244,16 @@ export const generatePictureModelViaGateway = async (params: {
   };
 }): Promise<Picture3dRecipe> => {
   let helperAgentId: string | null = null;
+  const configClient = params.client as unknown as GatewayClient;
   try {
     const created = await createGatewayAgent({
-      client: params.client,
+      client: configClient,
       name: `${PICTURE_MODEL_AGENT_NAME} ${Date.now()}`,
     });
     helperAgentId = created.id;
 
     await updateGatewayAgentOverrides({
-      client: params.client,
+      client: configClient,
       agentId: helperAgentId,
       overrides: {
         tools: {
@@ -276,7 +282,7 @@ export const generatePictureModelViaGateway = async (params: {
     if (helperAgentId) {
       try {
         await removeGatewayAgentFromConfigOnly({
-          client: params.client,
+          client: configClient,
           agentId: helperAgentId,
         });
       } catch {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { GatewayClient } from "@/lib/gateway/GatewayClient";
+import { NodeGatewayClient } from "@/lib/gateway/nodeGatewayClient";
 import {
   generatePictureModelViaGateway,
   MAX_PICTURE_MODEL_UPLOAD_BYTES,
@@ -8,7 +8,7 @@ import {
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const gatewayClient = new GatewayClient();
+  const gatewayClient = new NodeGatewayClient();
   try {
     const MULTIPART_OVERHEAD_ALLOWANCE = 1024;
     const contentLengthHeader = request.headers.get("content-length");
@@ -85,7 +85,6 @@ export async function POST(request: Request) {
       disableDeviceAuth: false,
     });
 
-    Buffer.from(arrayBuffer).toString("base64");
     const result = await generatePictureModelViaGateway({
       client: gatewayClient,
       summary: {
@@ -107,6 +106,6 @@ export async function POST(request: Request) {
         : "Failed to generate the 3D model from the uploaded image.";
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
-    gatewayClient.disconnect();
+    gatewayClient.close();
   }
 }
