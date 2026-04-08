@@ -126,7 +126,7 @@ export function CompanyBuilderModal({
     () => input.improvedBrief.trim() || input.businessDescription.trim(),
     [input.businessDescription, input.improvedBrief]
   );
-  const canUseAi = connected && agentCount > 0;
+  const canUseAi = connected;
   const canGenerate = canUseAi && effectiveBrief.length > 0 && !busy;
   const canPreviewChart = Boolean(plan && plan.roles.length > 0);
   const canCreate = Boolean(connected && plan && plan.roles.length > 0 && !busy);
@@ -341,8 +341,7 @@ export function CompanyBuilderModal({
                 ) : null}
                 {!canUseAi ? (
                   <p className="text-xs text-amber-200/80">
-                    Connect to a runtime and keep at least one available planning agent in the fleet
-                    to use AI suggestions.
+                    Connect to a runtime to use AI suggestions.
                   </p>
                 ) : null}
                 {statusLine ? <p className="text-xs text-cyan-100/75">{statusLine}</p> : null}

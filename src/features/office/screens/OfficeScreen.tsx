@@ -1610,12 +1610,20 @@ export function OfficeScreen({
       if (status !== "connected") {
         throw new Error("Connect to a runtime before using the company builder.");
       }
-      const livePlannerAgent = resolveCompanyPlanningAgent({
+      let livePlannerAgent = resolveCompanyPlanningAgent({
         agents: stateRef.current.agents,
         preferredAgentId: selectedChatAgentId ?? state.selectedAgentId,
       });
       if (!livePlannerAgent) {
-        throw new Error("Create or load at least one agent before using AI suggestions.");
+        setCompanyBuilderStatusLine("Creating a bootstrap planner agent\u2026");
+        await createGatewayAgent({ client, name: "Planner" });
+        await loadAgents({ forceSettings: true });
+        livePlannerAgent = resolveCompanyPlanningAgent({
+          agents: stateRef.current.agents,
+        });
+        if (!livePlannerAgent) {
+          throw new Error("Failed to create a bootstrap planner agent.");
+        }
       }
       setCompanyBuilderStatusLine(statusText);
       return runOpenClawPlanningPrompt({
@@ -1627,7 +1635,7 @@ export function OfficeScreen({
         prompt,
       });
     },
-    [client, dispatch, selectedChatAgentId, state.selectedAgentId, status],
+    [client, dispatch, loadAgents, selectedChatAgentId, state.selectedAgentId, status],
   );
   const handleImproveCompanyBrief = useCallback(
     async (brief: string) => {
