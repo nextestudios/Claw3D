@@ -8,11 +8,8 @@ export type CompanyStepProps = {
 
 export const CompanyStep = ({
   connected,
-  agentCount,
   onOpenCompanyBuilder,
 }: CompanyStepProps) => {
-  const canOpenBuilder = connected && agentCount > 0;
-
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-4">
@@ -60,7 +57,7 @@ export const CompanyStep = ({
       </div>
 
       <div className="pt-4">
-        {canOpenBuilder ? (
+        {connected ? (
           <div className="flex justify-center">
             <button
               type="button"
@@ -73,8 +70,7 @@ export const CompanyStep = ({
           </div>
         ) : (
           <div className="rounded-md border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-100/80">
-            Connect to a runtime and keep at least one planning agent available to generate the
-            company with AI.
+            Connect to a runtime to generate your company with AI.
           </div>
         )}
       </div>

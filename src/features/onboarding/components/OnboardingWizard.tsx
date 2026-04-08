@@ -88,13 +88,17 @@ export const OnboardingWizard = ({
 
   const goNext = useCallback(() => {
     markComplete(currentStep);
-    const next = getNextStep(currentStep);
+    let next = getNextStep(currentStep);
+    if (next === "agents" && agentCount === 0) {
+      markComplete("agents");
+      next = "company";
+    }
     if (next) {
       setCurrentStep(next);
     } else {
       onComplete();
     }
-  }, [currentStep, markComplete, onComplete]);
+  }, [agentCount, currentStep, markComplete, onComplete]);
 
   const goPrev = useCallback(() => {
     const prev = getPrevStep(currentStep);
