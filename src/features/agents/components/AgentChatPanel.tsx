@@ -13,7 +13,7 @@ import {
 import type { AgentState as AgentRecord } from "@/features/agents/state/store";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, ChevronRight, Clock, Mic, Pencil, Square, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Clock, Mic, Paperclip, Pencil, Square, Trash2, X } from "lucide-react";
 import type { GatewayModelChoice } from "@/lib/gateway/models";
 import type { AgentAvatarProfile } from "@/lib/avatars/profile";
 import { rewriteMediaLinesToMarkdown } from "@/lib/text/media-markdown";
@@ -64,6 +64,54 @@ const EMPTY_CHAT_INTRO_MESSAGES = [
   "What are we working on today?",
   "I'm here and ready. What's the plan?",
 ];
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+  "txt",
+  "md",
+  "markdown",
+  "json",
+  "js",
+  "jsx",
+  "ts",
+  "tsx",
+  "py",
+  "rb",
+  "go",
+  "rs",
+  "java",
+  "kt",
+  "sql",
+  "html",
+  "css",
+  "xml",
+  "yaml",
+  "yml",
+  "csv",
+  "log",
+]);
+const MAX_ATTACHMENT_TEXT_CHARS = 12_000;
+
+const isTextAttachmentFile = (file: File): boolean => {
+  const mime = file.type.trim().toLowerCase();
+  if (mime.startsWith("text/")) return true;
+  if (
+    mime.includes("json") ||
+    mime.includes("javascript") ||
+    mime.includes("typescript") ||
+    mime.includes("xml") ||
+    mime.includes("yaml")
+  ) {
+    return true;
+  }
+  const extension = file.name.split(".").pop()?.trim().toLowerCase() ?? "";
+  return extension.length > 0 && TEXT_ATTACHMENT_EXTENSIONS.has(extension);
+};
+
+const buildAttachmentPromptBlock = (fileName: string, content: string): string =>
+  [
+    `[Attached reference: ${fileName}]`,
+    content,
+    `[End attached reference: ${fileName}]`,
+  ].join("\n");
 
 const stableStringHash = (value: string): number => {
   let hash = 0;
@@ -882,6 +930,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
   onChange,
   onKeyDown,
   onSend,
+  onAttachmentFiles,
   onVoiceToggle,
   onStop,
   canSend,
@@ -893,6 +942,8 @@ const AgentChatComposer = memo(function AgentChatComposer({
   voiceSupported,
   voiceState,
   voiceError,
+  attachmentStatus,
+  attachmentInputRef,
   queuedMessages,
   onRemoveQueuedMessage,
   inputRef,
@@ -911,6 +962,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
   onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
+  onAttachmentFiles: (event: ChangeEvent<HTMLInputElement>) => void;
   onVoiceToggle?: () => void;
   onStop: () => void;
   canSend: boolean;
@@ -922,6 +974,8 @@ const AgentChatComposer = memo(function AgentChatComposer({
   voiceSupported: boolean;
   voiceState: VoiceRecorderState;
   voiceError?: string | null;
+  attachmentStatus?: string | null;
+  attachmentInputRef: MutableRefObject<HTMLInputElement | null>;
   queuedMessages: string[];
   onRemoveQueuedMessage?: (index: number) => void;
   inputRef: (el: HTMLTextAreaElement | HTMLInputElement | null) => void;
@@ -1125,7 +1179,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
             </button>
           </div>
         ) : null}
-        {voiceStatusText || voiceError ? (
+        {voiceStatusText || voiceError || attachmentStatus ? (
           <div
             className={`mb-2 rounded-md border px-2.5 py-1.5 font-mono text-[10px] tracking-[0.02em] ${
               voiceError
@@ -1134,10 +1188,18 @@ const AgentChatComposer = memo(function AgentChatComposer({
             }`}
             data-testid="agent-voice-status"
           >
-            {voiceError ?? voiceStatusText}
+            {voiceError ?? voiceStatusText ?? attachmentStatus}
           </div>
         ) : null}
         <div className="flex items-end gap-2">
+          <input
+            ref={attachmentInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            accept=".txt,.md,.markdown,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.kt,.sql,.html,.css,.xml,.yaml,.yml,.csv,.log,text/*,application/json,application/xml"
+            onChange={onAttachmentFiles}
+          />
           <textarea
             ref={inputRef}
             rows={1}
@@ -1147,6 +1209,19 @@ const AgentChatComposer = memo(function AgentChatComposer({
             onKeyDown={onKeyDown}
             placeholder="type a message"
           />
+          <button
+            className="rounded-md border border-border/70 bg-surface-3 px-2.5 py-2 font-mono text-[11px] font-medium tracking-[0.02em] text-white transition hover:bg-surface-2 hover:text-white disabled:cursor-not-allowed disabled:border-border/30 disabled:bg-muted/20 disabled:text-muted-foreground"
+            type="button"
+            onClick={() => attachmentInputRef.current?.click()}
+            disabled={!canSend}
+            aria-label="Attach text files"
+            title="Attach text files"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Paperclip className="h-3.5 w-3.5" />
+              <span>Attach</span>
+            </span>
+          </button>
           {voiceEnabled ? (
             <button
               className={`rounded-md border px-2.5 py-2 font-mono text-[11px] font-medium tracking-[0.02em] transition ${
@@ -1224,7 +1299,9 @@ export const AgentChatPanel = ({
   const [renameSaving, setRenameSaving] = useState(false);
   const [renameDraft, setRenameDraft] = useState(agent.name);
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [attachmentStatus, setAttachmentStatus] = useState<string | null>(null);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const renameEditorRef = useRef<HTMLDivElement | null>(null);
   const scrollToBottomNextOutputRef = useRef(false);
@@ -1317,6 +1394,7 @@ export const AgentChatPanel = ({
       if (!trimmed) return;
       plainDraftRef.current = "";
       setDraftValue("");
+      setAttachmentStatus(null);
       onDraftChange("");
       scrollToBottomNextOutputRef.current = true;
       onSend(trimmed);
@@ -1401,6 +1479,48 @@ export const AgentChatPanel = ({
   const handleComposerSend = useCallback(() => {
     handleSend(draftValue);
   }, [draftValue, handleSend]);
+
+  const handleAttachmentFiles = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      if (files.length === 0) return;
+      const unsupported = files.filter((file) => !isTextAttachmentFile(file));
+      const supported = files.filter((file) => isTextAttachmentFile(file));
+      if (supported.length === 0) {
+        setAttachmentStatus("Only text/code/markdown-style files can be attached right now.");
+        return;
+      }
+      try {
+        const blocks = await Promise.all(
+          supported.map(async (file) => {
+            const rawText = await file.text();
+            const normalizedText = rawText.trim();
+            const clippedText =
+              normalizedText.length > MAX_ATTACHMENT_TEXT_CHARS
+                ? `${normalizedText.slice(0, MAX_ATTACHMENT_TEXT_CHARS).trimEnd()}\n[Truncated]`
+                : normalizedText;
+            return buildAttachmentPromptBlock(file.name, clippedText);
+          })
+        );
+        const nextValue = [draftValue.trim(), ...blocks].filter(Boolean).join("\n\n");
+        plainDraftRef.current = nextValue;
+        setDraftValue(nextValue);
+        onDraftChange(nextValue);
+        const statusParts = [`Attached ${supported.length} file${supported.length === 1 ? "" : "s"}.`];
+        if (unsupported.length > 0) {
+          statusParts.push(`${unsupported.length} unsupported file${unsupported.length === 1 ? "" : "s"} skipped.`);
+        }
+        setAttachmentStatus(statusParts.join(" "));
+        scrollToBottomNextOutputRef.current = true;
+      } catch (error) {
+        setAttachmentStatus(
+          error instanceof Error ? error.message : "Failed to read one or more attachments."
+        );
+      }
+    },
+    [draftValue, onDraftChange]
+  );
 
   const handleVoiceToggle = useCallback(
     () => {
@@ -1654,6 +1774,7 @@ export const AgentChatPanel = ({
             onChange={handleComposerChange}
             onKeyDown={handleComposerKeyDown}
             onSend={handleComposerSend}
+            onAttachmentFiles={handleAttachmentFiles}
             onVoiceToggle={handleVoiceToggle}
             onStop={onStopRun}
             canSend={canSend}
@@ -1665,6 +1786,8 @@ export const AgentChatPanel = ({
             voiceSupported={voiceSupported}
             voiceState={voiceState}
             voiceError={voiceError}
+            attachmentStatus={attachmentStatus}
+            attachmentInputRef={attachmentInputRef}
             queuedMessages={agent.queuedMessages ?? []}
             onRemoveQueuedMessage={onRemoveQueuedMessage}
             modelOptions={modelOptionsWithFallback.map((option) => ({

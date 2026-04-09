@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MessageSquare, ChevronDown, Mic } from "lucide-react";
+import { MessageSquare, ChevronDown, ChevronLeft, ChevronRight, Mic } from "lucide-react";
 import { RetroOffice3D } from "@/features/retro-office/RetroOffice3D";
 import type { OfficeAgent } from "@/features/retro-office/core/types";
 import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
@@ -77,6 +77,7 @@ import {
 } from "@/lib/office/floorRoster";
 import {
   getOfficeFloor,
+  listOfficeFloorsForProvider,
   resolveActiveOfficeFloorId,
   type FloorId,
 } from "@/lib/office/floors";
@@ -728,16 +729,42 @@ const normalizeOfficeFeedText = (
   value: string | null | undefined,
   maxChars?: number,
 ): string => {
-  const normalized = (value ?? "").replace(/\s+/g, " ").trim();
-  if (!normalized) return "";
+  const normalized = (value ?? "")
+    .replace(/([.!?])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim();
+  const deduped = (normalized.match(/[^.!?]+[.!?]?/g) ?? [])
+    .map((fragment) => fragment.trim())
+    .filter((fragment, index, fragments) => {
+      if (!fragment) return false;
+      const normalizedFragment = fragment
+        .toLowerCase()
+        .replace(/[—–-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return (
+        fragments.findIndex((entry) => {
+          const normalizedEntry = entry
+            .toLowerCase()
+            .replace(/[—–-]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          return normalizedEntry === normalizedFragment;
+        }) === index
+      );
+    })
+    .join(" ")
+    .trim();
+  const finalText = deduped || normalized;
+  if (!finalText) return "";
   if (
     typeof maxChars !== "number" ||
     !Number.isFinite(maxChars) ||
     maxChars <= 0
   ) {
-    return normalized;
+    return finalText;
   }
-  if (normalized.length <= maxChars) return normalized;
+  if (finalText.length <= maxChars) return finalText;
   return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 };
 
@@ -932,6 +959,7 @@ export function OfficeScreen({
     gatewayUrl,
     token,
     selectedAdapterType,
+    detectedAdapterType,
     activeAdapterType,
     localGatewayDefaults,
     error: gatewayError,
@@ -1023,6 +1051,7 @@ export function OfficeScreen({
   const historyInFlightRef = useRef<Set<string>>(new Set());
   const lastTransportHistoryRefreshKeyRef = useRef<Record<string, string>>({});
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatRosterCollapsed, setChatRosterCollapsed] = useState(false);
   const [selectedChatAgentId, setSelectedChatAgentId] = useState<string | null>(
     null,
   );
@@ -1070,6 +1099,9 @@ export function OfficeScreen({
     Record<string, string>
   >({});
   const [activeFloorId, setActiveFloorId] = useState<FloorId>("lobby");
+  const previousGatewayStatusRef = useRef<"disconnected" | "connecting" | "connected">(
+    "disconnected",
+  );
   const [floorRosterCache, setFloorRosterCache] = useState(() =>
     createFloorRosterCache(),
   );
@@ -1129,6 +1161,38 @@ export function OfficeScreen({
       cancelled = true;
     };
   }, [settingsCoordinator]);
+
+  useEffect(() => {
+    const previousStatus = previousGatewayStatusRef.current;
+    previousGatewayStatusRef.current = status;
+    if (previousStatus === "connected" || status !== "connected") return;
+    if (activeFloor.kind !== "lobby" || activeFloor.provider !== "demo") return;
+
+    const connectedProvider =
+      detectedAdapterType && detectedAdapterType !== "demo"
+        ? detectedAdapterType
+        : selectedAdapterType !== "demo"
+          ? selectedAdapterType
+          : null;
+    if (!connectedProvider) return;
+
+    const targetFloor =
+      listOfficeFloorsForProvider(connectedProvider).find(
+        (floor) => floor.enabled && floor.kind === "runtime",
+      ) ?? null;
+    if (!targetFloor || targetFloor.id === activeFloor.id) return;
+
+    setActiveFloorId(targetFloor.id);
+    settingsCoordinator.schedulePatch({ activeFloorId: targetFloor.id }, 0);
+  }, [
+    activeFloor.id,
+    activeFloor.kind,
+    activeFloor.provider,
+    detectedAdapterType,
+    selectedAdapterType,
+    settingsCoordinator,
+    status,
+  ]);
 
   useEffect(() => {
     initJukeboxStore();
@@ -2583,7 +2647,7 @@ export function OfficeScreen({
 
     for (const agent of state.agents) {
       const previewText = normalizeOfficeFeedText(
-        agent.lastResult ?? agent.latestPreview,
+        agent.latestPreview ?? agent.lastResult,
       );
       const previewTs = agent.lastAssistantMessageAt ?? 0;
       if (!previewText || previewTs <= 0) continue;
@@ -4605,7 +4669,10 @@ export function OfficeScreen({
       />
       <section className="relative h-full min-h-0 min-w-0 overflow-hidden">
         <RetroOffice3D
+          key={activeFloor.id}
           agents={allVisibleAgents}
+          storageNamespace={activeFloor.id}
+          layoutPreset={activeFloor.kind === "lobby" ? "lobby" : "office"}
           officeCenterSignal={officeCameraCenterSignal}
           animationState={officeAnimationState}
           deskAssignmentByDeskUid={deskAssignmentByDeskUid}
@@ -5236,19 +5303,70 @@ export function OfficeScreen({
         {chatOpen && (
           <div
             className="flex overflow-hidden rounded border border-white/10 bg-[#0e0a04] shadow-2xl"
-            style={{ width: 560, height: 520 }}
+            style={{
+              width: chatRosterCollapsed
+                ? "min(680px, calc(100vw - 1.5rem))"
+                : "min(780px, calc(100vw - 1.5rem))",
+              height: "min(560px, calc(100vh - 5.5rem))",
+            }}
           >
-            <div className="flex w-44 shrink-0 flex-col border-r border-white/10">
+            <div
+              className={`flex shrink-0 flex-col border-r border-white/10 transition-[width] ${
+                chatRosterCollapsed ? "w-12" : "w-52"
+              }`}
+            >
               <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-widest text-white/60">
-                  Agents
-                </span>
-                <span className="font-mono text-[10px] text-white/40">
-                  {chatRosterEntries.length}
-                </span>
+                {!chatRosterCollapsed ? (
+                  <>
+                    <span className="font-mono text-[11px] font-semibold uppercase tracking-widest text-white/60">
+                      Agents
+                    </span>
+                    <span className="font-mono text-[10px] text-white/40">
+                      {chatRosterEntries.length}
+                    </span>
+                  </>
+                ) : (
+                  <span className="mx-auto font-mono text-[10px] text-white/45">
+                    {chatRosterEntries.length}
+                  </span>
+                )}
               </div>
+              <button
+                type="button"
+                onClick={() => setChatRosterCollapsed((current) => !current)}
+                className="mx-2 mt-2 inline-flex items-center justify-center rounded border border-white/10 bg-white/5 px-2 py-2 text-white/65 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                aria-label={chatRosterCollapsed ? "Expand agent list" : "Collapse agent list"}
+                title={chatRosterCollapsed ? "Expand agent list" : "Collapse agent list"}
+              >
+                {chatRosterCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronLeft className="h-4 w-4" />
+                )}
+              </button>
               <div className="flex-1 overflow-y-auto">
-                {chatRosterEntries.length === 0 ? (
+                {chatRosterCollapsed ? (
+                  <div className="flex flex-col items-center gap-2 px-1 py-2">
+                    {chatRosterEntries.map((agent) => {
+                      const isSelected = agent.id === selectedChatAgentId;
+                      return (
+                        <button
+                          key={agent.id}
+                          type="button"
+                          onClick={() => handleOpenAgentChat(agent.id)}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded border font-mono text-[10px] transition ${
+                            isSelected
+                              ? "border-cyan-400/45 bg-cyan-950/50 text-cyan-100"
+                              : "border-white/10 bg-white/5 text-white/55 hover:border-white/20 hover:bg-white/10 hover:text-white/80"
+                          }`}
+                          title={agent.name}
+                        >
+                          {agent.name.slice(0, 1).toUpperCase()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : chatRosterEntries.length === 0 ? (
                   <div className="px-3 py-4 font-mono text-[11px] text-white/30">
                     No agents.
                   </div>
