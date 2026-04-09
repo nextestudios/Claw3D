@@ -142,6 +142,13 @@ const resolveAssistantTextFromResponse = (payload: unknown): string | null => {
   return text || null;
 };
 
+const isAbortLikeError = (error: unknown, controller?: AbortController | null): boolean => {
+  if (controller?.signal.aborted) return true;
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+};
+
 const normalizeModelChoices = (registry: CustomRuntimeRegistryResponse | null): string[] => {
   if (!registry || !isRecord(registry.models)) return [];
   return Object.keys(registry.models).map((value) => value.trim()).filter(Boolean);
@@ -525,6 +532,7 @@ export class CustomRuntimeProvider implements RuntimeProvider {
         runtimeUrl: this.baseUrl,
         pathname: "/v1/chat/completions",
         method: "POST",
+        signal: controller.signal,
         body: {
           model: session.model ?? undefined,
           stream: false,
@@ -555,6 +563,12 @@ export class CustomRuntimeProvider implements RuntimeProvider {
         text: assistantText,
       };
     } catch (error) {
+      if (isAbortLikeError(error, controller)) {
+        return {
+          status: "aborted",
+          runId: runId || null,
+        };
+      }
       const health = await this.fetchHealth().catch(() => null);
       throw new Error(
         buildChatFailureMessage(

@@ -31,7 +31,9 @@ import {
   resolveDeskAssignments,
   resolveOfficePreferencePublic,
   resolveStudioActiveFloorId,
+  resolveStudioGatewayProfiles,
   type StudioGatewayAdapterType,
+  type StudioGatewaySettings,
 } from "@/lib/studio/settings";
 import {
   createGatewayAgent,
@@ -67,8 +69,6 @@ import {
 } from "@/features/office/components/RemoteAgentChatPanel";
 import { useOfficeFloorRuntimePersistence } from "@/features/office/hooks/useOfficeFloorRuntimePersistence";
 import {
-  buildDirectedAgentMessageInstruction,
-  sendAgentHandoffViaRuntime,
   type RuntimeAgentMessageMode,
 } from "@/lib/runtime/agentMessaging";
 import {
@@ -322,6 +322,13 @@ type OfficeDeleteMutationBlockState = {
   phase: "queued" | "mutating" | "awaiting-restart";
   startedAt: number;
   sawDisconnect: boolean;
+};
+
+type PendingFloorRuntimeSwitch = {
+  floorId: FloorId;
+  adapterType: StudioGatewayAdapterType;
+  gatewayUrl: string;
+  token: string;
 };
 
 type PhoneCallSpeakPayload = {
@@ -1099,6 +1106,8 @@ export function OfficeScreen({
     Record<string, string>
   >({});
   const [activeFloorId, setActiveFloorId] = useState<FloorId>("lobby");
+  const [pendingFloorRuntimeSwitch, setPendingFloorRuntimeSwitch] =
+    useState<PendingFloorRuntimeSwitch | null>(null);
   const previousGatewayStatusRef = useRef<"disconnected" | "connecting" | "connected">(
     "disconnected",
   );
@@ -1206,6 +1215,52 @@ export function OfficeScreen({
     setSelectedAdapterType,
     settingsCoordinator,
     status,
+  ]);
+
+  useEffect(() => {
+    if (!pendingFloorRuntimeSwitch) return;
+    const targetSelectedAdapter = selectedAdapterType === pendingFloorRuntimeSwitch.adapterType;
+    const targetGatewayUrl = gatewayUrl.trim() === pendingFloorRuntimeSwitch.gatewayUrl;
+    const targetToken = token === pendingFloorRuntimeSwitch.token;
+    if (!targetSelectedAdapter || !targetGatewayUrl || !targetToken) {
+      return;
+    }
+    if (status === "connected" || status === "connecting") {
+      const runtimeMatchesTarget =
+        activeAdapterType === pendingFloorRuntimeSwitch.adapterType &&
+        gatewayUrl.trim() === pendingFloorRuntimeSwitch.gatewayUrl &&
+        token === pendingFloorRuntimeSwitch.token;
+      if (runtimeMatchesTarget) {
+        setPendingFloorRuntimeSwitch(null);
+        return;
+      }
+      disconnect();
+      return;
+    }
+    void connect()
+      .catch((error) => {
+        console.error("Failed to connect floor runtime.", error);
+      })
+      .finally(() => {
+        setPendingFloorRuntimeSwitch((current) =>
+          current &&
+          current.floorId === pendingFloorRuntimeSwitch.floorId &&
+          current.adapterType === pendingFloorRuntimeSwitch.adapterType &&
+          current.gatewayUrl === pendingFloorRuntimeSwitch.gatewayUrl &&
+          current.token === pendingFloorRuntimeSwitch.token
+            ? null
+            : current,
+        );
+      });
+  }, [
+    activeAdapterType,
+    connect,
+    disconnect,
+    gatewayUrl,
+    pendingFloorRuntimeSwitch,
+    selectedAdapterType,
+    status,
+    token,
   ]);
 
   useEffect(() => {
@@ -1372,18 +1427,73 @@ export function OfficeScreen({
       setOfficeCameraCenterSignal((current) => current + 1);
 
       const adapterType = floor.provider as StudioGatewayAdapterType;
-      setSelectedAdapterType(adapterType);
+      let nextGatewayUrl = gatewayUrl.trim();
+      let nextToken = token;
 
       try {
-        const settings = await settingsCoordinator.loadSettings({ maxAgeMs: 30_000 });
+        const envelope =
+          typeof settingsCoordinator.loadSettingsEnvelope === "function"
+            ? await settingsCoordinator.loadSettingsEnvelope({ maxAgeMs: 30_000 })
+            : {
+                settings: await settingsCoordinator.loadSettings({ maxAgeMs: 30_000 }),
+              };
+        const settings = envelope.settings ?? null;
+        const gateway = settings?.gateway ?? null;
+        const gatewaySettings: StudioGatewaySettings | null = gateway
+          ? {
+              url: typeof gateway.url === "string" ? gateway.url.trim() : "",
+              token: token,
+              adapterType:
+                gateway.adapterType === "demo" ||
+                gateway.adapterType === "hermes" ||
+                gateway.adapterType === "openclaw" ||
+                gateway.adapterType === "local" ||
+                gateway.adapterType === "claw3d" ||
+                gateway.adapterType === "custom"
+                  ? gateway.adapterType
+                  : "openclaw",
+              ...(gateway.profiles
+                ? {
+                    profiles: Object.fromEntries(
+                      Object.entries(gateway.profiles).flatMap(([profileAdapterType, profile]) =>
+                        profile?.url
+                          ? [
+                              [
+                                profileAdapterType,
+                                {
+                                  url: profile.url.trim(),
+                                  token: "",
+                                },
+                              ],
+                            ]
+                          : [],
+                      ),
+                    ) as StudioGatewaySettings["profiles"],
+                  }
+                : {}),
+            }
+          : null;
+        const { profiles } = resolveStudioGatewayProfiles({
+          gateway: gatewaySettings,
+          localDefaults: localGatewayDefaults,
+        });
         const floorRuntime = settings?.officeFloors?.[resolved];
-        const nextGatewayUrl = floorRuntime?.gatewayUrl?.trim() || "";
-        if (nextGatewayUrl) {
-          setGatewayUrl(nextGatewayUrl);
-        }
+        nextGatewayUrl =
+          floorRuntime?.gatewayUrl?.trim() || profiles[adapterType]?.url?.trim() || nextGatewayUrl;
+        nextToken = profiles[adapterType]?.token ?? nextToken;
       } catch (error) {
         console.error("Failed to resolve floor runtime profile.", error);
       }
+
+      setSelectedAdapterType(adapterType);
+      setGatewayUrl(nextGatewayUrl);
+      setToken(nextToken);
+      setPendingFloorRuntimeSwitch({
+        floorId: resolved,
+        adapterType,
+        gatewayUrl: nextGatewayUrl,
+        token: nextToken,
+      });
 
       const preferredAgentId =
         floorRosterCache[resolved]?.selectedAgentId ??
@@ -1399,10 +1509,13 @@ export function OfficeScreen({
     [
       floorRosterCache,
       focusLocalAgent,
+      gatewayUrl,
       localGatewayDefaults,
       setGatewayUrl,
+      setToken,
       setSelectedAdapterType,
       settingsCoordinator,
+      token,
     ],
   );
   const focusChatTarget = useCallback(
@@ -3582,58 +3695,31 @@ export function OfficeScreen({
           },
         ],
       }));
-      const remoteClient = new GatewayClient();
       try {
-        await remoteClient.connect({
-          gatewayUrl: remoteOfficeGatewayUrl,
-        });
-        const agentsResult = (await remoteClient.call("agents.list", {})) as {
-          mainKey?: string;
-          agents?: Array<{ id?: string; name?: string }>;
-        };
-        const remoteAgents = Array.isArray(agentsResult.agents)
-          ? agentsResult.agents
-          : [];
-        if (remoteAgents.length === 0) {
-          throw new Error("Remote agent list is unavailable right now.");
-        }
-        if (!remoteAgents.some((entry) => (entry.id?.trim() ?? "") === remoteAgentId)) {
-          throw new Error("Remote agent is no longer available.");
-        }
-        const sessionKey = buildAgentMainSessionKey(
-          remoteAgentId,
-          agentsResult.mainKey?.trim() || "main",
-        );
         const deliveryMode =
           (remoteChatByAgentId[agentId]?.mode ?? EMPTY_REMOTE_CHAT_SESSION.mode) === "interval"
             ? "interval"
             : "direct";
-        const sendResult = (await remoteClient.call("chat.send", {
-          sessionKey,
-          message: buildDirectedAgentMessageInstruction({
-            targetAgentId: remoteAgentId,
+        const response = await fetch("/api/office/remote-message", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            agentId: remoteAgentId,
             message: trimmed,
             mode: deliveryMode,
-            sourceLabel: "another office user",
           }),
-          deliver: false,
-          idempotencyKey: randomUUID(),
-        })) as { runId?: string; status?: string; text?: string; content?: string; message?: string };
-        const runId =
-          typeof sendResult?.runId === "string" && sendResult.runId.trim()
-            ? sendResult.runId.trim()
-            : null;
-        if (runId) {
-          await remoteClient.call("agent.wait", {
-            runId,
-            timeoutMs: deliveryMode === "interval" ? 8_000 : 15_000,
-          });
+        });
+        const payload = (await response.json()) as {
+          error?: string;
+          assistantText?: string | null;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to deliver the remote office message.");
         }
-        const historyResult = (await remoteClient.call("chat.history", {
-          sessionKey,
-          limit: 8,
-        })) as { messages?: unknown };
-        const assistantText = resolveLatestAssistantHistoryText(historyResult?.messages);
+        const assistantText =
+          typeof payload.assistantText === "string" ? payload.assistantText.trim() : "";
         updateRemoteChatSession(agentId, (session) => ({
           ...session,
           sending: false,
@@ -3677,11 +3763,9 @@ export function OfficeScreen({
             },
           ],
         }));
-      } finally {
-        remoteClient.disconnect();
       }
     },
-    [remoteChatByAgentId, remoteOfficeGatewayUrl, updateRemoteChatSession],
+    [remoteChatByAgentId, updateRemoteChatSession],
   );
 
   const handleRemoteAgentHandoff = useCallback(
@@ -3717,55 +3801,41 @@ export function OfficeScreen({
           },
         ],
       }));
-      const remoteClient = new GatewayClient();
       try {
-        await remoteClient.connect({
-          gatewayUrl: remoteOfficeGatewayUrl,
-        });
         const historyContext = (
           sessionSnapshot.messages ?? []
         )
           .slice(-6)
           .map((entry) => `${entry.role}: ${entry.text}`)
           .join("\n");
-        const agentsResult = (await remoteClient.call("agents.list", {})) as {
-          mainKey?: string;
-          agents?: Array<{ id?: string; name?: string }>;
-        };
-        const handoffResult = (await sendAgentHandoffViaRuntime(remoteClient, {
-          targetAgentId: remoteAgentId,
-          task: trimmed,
-          sourceLabel: "another office user",
-          context: sessionSnapshot.handoffContext.trim() || historyContext || undefined,
-          deliverables:
-            sessionSnapshot.handoffDeliverables
-              .split(",")
-              .map((entry) => entry.trim())
-              .filter(Boolean).length > 0
-              ? sessionSnapshot.handoffDeliverables
-                  .split(",")
-                  .map((entry) => entry.trim())
-                  .filter(Boolean)
-              : ["Acknowledge ownership", "Send the next checkpoint or blocking question"],
-          acceptanceCriteria:
-            sessionSnapshot.handoffAcceptance.trim() ||
-            "Respond with an acknowledgement or the next concrete update.",
-          idempotencyKey: randomUUID(),
-        })) as { runId?: string };
-        const runId =
-          typeof handoffResult?.runId === "string" ? handoffResult.runId.trim() : "";
-        if (runId) {
-          await remoteClient.call("agent.wait", { runId, timeoutMs: 15_000 });
+        const response = await fetch("/api/office/remote-handoff", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            agentId: remoteAgentId,
+            task: trimmed,
+            context: sessionSnapshot.handoffContext.trim() || historyContext || undefined,
+            deliverables:
+              sessionSnapshot.handoffDeliverables
+                .split(",")
+                .map((entry) => entry.trim())
+                .filter(Boolean).length > 0
+                ? sessionSnapshot.handoffDeliverables
+                    .split(",")
+                    .map((entry) => entry.trim())
+                    .filter(Boolean)
+                : ["Acknowledge ownership", "Send the next checkpoint or blocking question"],
+            acceptanceCriteria:
+              sessionSnapshot.handoffAcceptance.trim() ||
+              "Respond with an acknowledgement or the next concrete update.",
+          }),
+        });
+        const payload = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to deliver the remote handoff.");
         }
-        const sessionKey = buildAgentMainSessionKey(
-          remoteAgentId,
-          agentsResult.mainKey?.trim() || "main",
-        );
-        const historyResult = (await remoteClient.call("chat.history", {
-          sessionKey,
-          limit: 8,
-        })) as { messages?: unknown };
-        const assistantText = resolveLatestAssistantHistoryText(historyResult?.messages);
         updateRemoteChatSession(agentId, (session) => ({
           ...session,
           handoffing: false,
@@ -3778,16 +3848,6 @@ export function OfficeScreen({
               text: "Handoff delivered to the remote agent.",
               timestampMs: Date.now(),
             },
-            ...(assistantText
-              ? [
-                  {
-                    id: randomUUID(),
-                    role: "assistant" as const,
-                    text: assistantText,
-                    timestampMs: Date.now(),
-                  },
-                ]
-              : []),
           ],
         }));
       } catch (error) {
@@ -3807,11 +3867,9 @@ export function OfficeScreen({
             },
           ],
         }));
-      } finally {
-        remoteClient.disconnect();
       }
     },
-    [remoteChatByAgentId, remoteOfficeGatewayUrl, updateRemoteChatSession],
+    [remoteChatByAgentId, updateRemoteChatSession],
   );
 
   const lastStandupTriggerKeyRef = useRef<string | null>(null);

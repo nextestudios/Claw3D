@@ -19,6 +19,7 @@ type CustomRuntimeProxyInput = {
   pathname: string;
   method?: "GET" | "POST";
   body?: unknown;
+  signal?: AbortSignal;
 };
 
 export async function requestCustomRuntime<T = unknown>({
@@ -26,6 +27,7 @@ export async function requestCustomRuntime<T = unknown>({
   pathname,
   method = "GET",
   body,
+  signal,
 }: CustomRuntimeProxyInput): Promise<T> {
   const normalizedRuntimeUrl = normalizeCustomBaseUrl(runtimeUrl);
   if (!normalizedRuntimeUrl) {
@@ -38,6 +40,7 @@ export async function requestCustomRuntime<T = unknown>({
       Accept: "application/json",
     },
     cache: "no-store",
+    signal,
     body: JSON.stringify({
       runtimeUrl: normalizedRuntimeUrl,
       pathname,

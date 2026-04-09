@@ -61,6 +61,7 @@ Additional future departments:
 - Building systems are shared and runtime-neutral.
 - Cross-floor coordination is explicit, not accidental.
 - The gateway/runtime remains the source of truth for runtime-owned data.
+- Floor switching owns the connection lifecycle for that floor.
 
 ## Why Floors
 
@@ -151,6 +152,14 @@ A floor can be:
 - errored
 
 Multiple floors may be loaded in the same session, but they should not share runtime connection state.
+
+When the user switches to another runtime-backed floor:
+
+- the shell should keep the building mounted
+- the current runtime should disconnect if the target floor uses a different transport
+- the next floor should connect using that floor's saved runtime profile
+- the floor label should not get ahead of the actual runtime handoff
+- reconnect churn should collapse into one transition state instead of flashing through multiple disconnected/connecting states
 
 ## State Ownership
 
@@ -244,6 +253,7 @@ type FloorRuntimeState = {
 Important rule:
 
 - floor-local runtime state should not be overwritten by switching to another floor
+- switching floors should not leave the previous runtime active under the next floor's label
 
 ## PR Breakdown
 
@@ -495,6 +505,7 @@ Acceptance criteria:
 - switching floors does not wipe another floor’s runtime state
 - reconnecting one floor does not reset another floor
 - Claw3D can show disconnected/configured/connected/errored state per floor
+- moving from one runtime floor to another reconnects against the target runtime before the floor is treated as live
 
 ### Phase 3: Per-Floor Roster Hydration
 
@@ -525,6 +536,7 @@ Acceptance criteria:
 - floor switching is UI-stateful, not route-destructive
 - the shell remains stable while floor scenes swap
 - disconnected floors remain visible as places, not absent data
+- runtime-backed floors enter through a transition/arrival flow, not by silently reusing the previous floor's live runtime
 
 ### Phase 5: Cross-Floor Coordination Primitives
 
