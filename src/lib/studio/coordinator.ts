@@ -255,6 +255,15 @@ const mergeTaskBoardPatch = (
   return merged;
 };
 
+const mergeOfficeFloorsPatch = (
+  current: StudioSettingsPatch["officeFloors"],
+  next: StudioSettingsPatch["officeFloors"],
+): StudioSettingsPatch["officeFloors"] => {
+  if (!next) return current;
+  if (!current) return { ...next };
+  return { ...current, ...next };
+};
+
 const mergeStudioPatch = (
   current: StudioSettingsPatch | null,
   next: StudioSettingsPatch
@@ -262,6 +271,7 @@ const mergeStudioPatch = (
   if (!current) {
     return {
       ...(next.gateway !== undefined ? { gateway: next.gateway } : {}),
+      ...(next.activeFloorId !== undefined ? { activeFloorId: next.activeFloorId } : {}),
       ...(next.focused ? { focused: { ...next.focused } } : {}),
       ...(next.avatars ? { avatars: { ...next.avatars } } : {}),
       ...(next.deskAssignments ? { deskAssignments: { ...next.deskAssignments } } : {}),
@@ -269,6 +279,7 @@ const mergeStudioPatch = (
       ...(next.voiceReplies ? { voiceReplies: { ...next.voiceReplies } } : {}),
       ...(next.office ? { office: { ...next.office } } : {}),
       ...(next.standup ? { standup: { ...next.standup } } : {}),
+      ...(next.officeFloors ? { officeFloors: { ...next.officeFloors } } : {}),
     };
   }
   const focused = mergeFocusedPatch(current.focused, next.focused);
@@ -282,11 +293,17 @@ const mergeStudioPatch = (
   const office = mergeOfficePatch(current.office, next.office);
   const standup = mergeStandupPatch(current.standup, next.standup);
   const taskBoard = mergeTaskBoardPatch(current.taskBoard, next.taskBoard);
+  const officeFloors = mergeOfficeFloorsPatch(current.officeFloors, next.officeFloors);
   return {
     ...(next.gateway !== undefined
       ? { gateway: next.gateway }
       : current.gateway !== undefined
         ? { gateway: current.gateway }
+        : {}),
+    ...(next.activeFloorId !== undefined
+      ? { activeFloorId: next.activeFloorId }
+      : current.activeFloorId !== undefined
+        ? { activeFloorId: current.activeFloorId }
         : {}),
     ...(focused ? { focused } : {}),
     ...(avatars ? { avatars } : {}),
@@ -296,6 +313,7 @@ const mergeStudioPatch = (
     ...(office ? { office } : {}),
     ...(standup ? { standup } : {}),
     ...(taskBoard ? { taskBoard } : {}),
+    ...(officeFloors ? { officeFloors } : {}),
   };
 };
 

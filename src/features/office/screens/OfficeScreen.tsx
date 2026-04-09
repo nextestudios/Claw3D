@@ -30,6 +30,8 @@ import {
 import {
   resolveDeskAssignments,
   resolveOfficePreferencePublic,
+  resolveStudioActiveFloorId,
+  type StudioGatewayAdapterType,
 } from "@/lib/studio/settings";
 import {
   createGatewayAgent,
@@ -57,16 +59,27 @@ import {
   stripUiMetadata,
 } from "@/lib/text/message-extract";
 import { resolveOfficeIntentSnapshot } from "@/lib/office/deskDirectives";
+import { OfficeFloorNav } from "@/features/office/components/OfficeFloorNav";
 import { AgentChatPanel } from "@/features/agents/components/AgentChatPanel";
 import {
   RemoteAgentChatPanel,
   type RemoteAgentChatMessage,
 } from "@/features/office/components/RemoteAgentChatPanel";
+import { useOfficeFloorRuntimePersistence } from "@/features/office/hooks/useOfficeFloorRuntimePersistence";
 import {
   buildDirectedAgentMessageInstruction,
   sendAgentHandoffViaRuntime,
   type RuntimeAgentMessageMode,
 } from "@/lib/runtime/agentMessaging";
+import {
+  buildFloorRosterState,
+  createFloorRosterCache,
+} from "@/lib/office/floorRoster";
+import {
+  getOfficeFloor,
+  resolveActiveOfficeFloorId,
+  type FloorId,
+} from "@/lib/office/floors";
 import {
   AgentEditorModal,
   type AgentEditorSection,
@@ -1056,6 +1069,10 @@ export function OfficeScreen({
   const [deskAssignmentByDeskUid, setDeskAssignmentByDeskUid] = useState<
     Record<string, string>
   >({});
+  const [activeFloorId, setActiveFloorId] = useState<FloorId>("lobby");
+  const [floorRosterCache, setFloorRosterCache] = useState(() =>
+    createFloorRosterCache(),
+  );
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
@@ -1090,6 +1107,29 @@ export function OfficeScreen({
   const { showOnboarding, completeOnboarding, resetOnboarding } =
     useOnboardingState();
   const [forceShowOnboarding, setForceShowOnboarding] = useState(false);
+  const activeFloor = useMemo(
+    () => getOfficeFloor(resolveActiveOfficeFloorId(activeFloorId)),
+    [activeFloorId],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const settings = await settingsCoordinator.loadSettings({ maxAgeMs: 30_000 });
+        if (!settings || cancelled) return;
+        setActiveFloorId(resolveStudioActiveFloorId(settings));
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to load active floor preference.", error);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsCoordinator]);
+
   useEffect(() => {
     initJukeboxStore();
   }, [initJukeboxStore]);
@@ -1150,6 +1190,13 @@ export function OfficeScreen({
     setRemoteOfficeToken,
   } = useStudioOfficePreference({
     gatewayUrl,
+    settingsCoordinator,
+  });
+  useOfficeFloorRuntimePersistence({
+    activeFloorId,
+    gatewayUrl,
+    status,
+    gatewayError,
     settingsCoordinator,
   });
   const {
@@ -1227,8 +1274,58 @@ export function OfficeScreen({
         setChatOpen(true);
       }
       dispatch({ type: "selectAgent", agentId });
+      setFloorRosterCache((prev) => {
+        const current = prev[activeFloorId];
+        if (!current || current.selectedAgentId === agentId) return prev;
+        return {
+          ...prev,
+          [activeFloorId]: { ...current, selectedAgentId: agentId },
+        };
+      });
     },
-    [dispatch],
+    [activeFloorId, dispatch],
+  );
+  const handleSelectFloor = useCallback(
+    async (floorId: FloorId) => {
+      const resolved = resolveActiveOfficeFloorId(floorId);
+      const floor = getOfficeFloor(resolved);
+      setActiveFloorId(resolved);
+      settingsCoordinator.schedulePatch({ activeFloorId: resolved }, 0);
+      setOfficeCameraCenterSignal((current) => current + 1);
+
+      const adapterType = floor.provider as StudioGatewayAdapterType;
+      setSelectedAdapterType(adapterType);
+
+      try {
+        const settings = await settingsCoordinator.loadSettings({ maxAgeMs: 30_000 });
+        const floorRuntime = settings?.officeFloors?.[resolved];
+        const nextGatewayUrl = floorRuntime?.gatewayUrl?.trim() || "";
+        if (nextGatewayUrl) {
+          setGatewayUrl(nextGatewayUrl);
+        }
+      } catch (error) {
+        console.error("Failed to resolve floor runtime profile.", error);
+      }
+
+      const preferredAgentId =
+        floorRosterCache[resolved]?.selectedAgentId ??
+        floorRosterCache[resolved]?.entries[0]?.agentId ??
+        null;
+      if (
+        preferredAgentId &&
+        stateRef.current.agents.some((agent) => agent.agentId === preferredAgentId)
+      ) {
+        focusLocalAgent(preferredAgentId, { openChat: false });
+      }
+    },
+    [
+      floorRosterCache,
+      focusLocalAgent,
+      localGatewayDefaults,
+      setGatewayUrl,
+      setSelectedAdapterType,
+      settingsCoordinator,
+    ],
   );
   const focusChatTarget = useCallback(
     (agentId: string) => {
@@ -1248,6 +1345,19 @@ export function OfficeScreen({
     },
     [focusLocalAgent],
   );
+  useEffect(() => {
+    setFloorRosterCache((previous) => ({
+      ...previous,
+      [activeFloor.id]: buildFloorRosterState({
+        floorId: activeFloor.id,
+        hydratedAt: Date.now(),
+        result: {
+          seeds: state.agents,
+          suggestedSelectedAgentId: state.selectedAgentId ?? previous[activeFloor.id]?.selectedAgentId ?? null,
+        },
+      }),
+    }));
+  }, [activeFloor.id, state.agents, state.selectedAgentId]);
 
   const handleDeskAssignmentChange = useCallback(
     (deskUid: string, agentId: string | null) => {
@@ -4486,6 +4596,13 @@ export function OfficeScreen({
           </div>
         </div>
       ) : null}
+      <OfficeFloorNav
+        activeFloorId={activeFloor.id}
+        floorRosterCache={floorRosterCache}
+        onSelectFloor={(floorId) => {
+          void handleSelectFloor(floorId);
+        }}
+      />
       <section className="relative h-full min-h-0 min-w-0 overflow-hidden">
         <RetroOffice3D
           agents={allVisibleAgents}
