@@ -215,7 +215,7 @@ export const GatewayConnectScreen = ({
   );
 
   return (
-    <div className="mx-auto flex min-h-0 w-full max-w-[820px] flex-1 flex-col gap-5">
+    <div className="mx-auto flex min-h-0 max-h-[calc(100dvh-max(1.5rem,calc(env(safe-area-inset-top)+env(safe-area-inset-bottom)+1.5rem)))] w-full max-w-[820px] flex-1 flex-col gap-4 overflow-y-auto pr-1 sm:gap-5">
       <div className="ui-card px-4 py-2">
         <div className="flex items-center gap-2">
           {status === "connecting" ? (
@@ -229,7 +229,7 @@ export const GatewayConnectScreen = ({
         </div>
       </div>
 
-      <div className="ui-card px-4 py-5 sm:px-6">
+      <div className="ui-card px-4 py-4 sm:px-6 sm:py-5">
         <div>
           <p className="font-mono text-[10px] font-medium tracking-[0.06em] text-muted-foreground">
             Remote gateway (recommended)
@@ -243,31 +243,31 @@ export const GatewayConnectScreen = ({
           <p className="mt-1 text-xs text-muted-foreground">
             Each backend keeps its own saved URL and token.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             <button
               type="button"
-              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              className="ui-btn-secondary w-full px-3 py-2 text-[11px] font-semibold tracking-[0.05em] sm:w-auto sm:py-1.5"
               onClick={useDemoPreset}
             >
               Demo backend
             </button>
             <button
               type="button"
-              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              className="ui-btn-secondary w-full px-3 py-2 text-[11px] font-semibold tracking-[0.05em] sm:w-auto sm:py-1.5"
               onClick={useHermesPreset}
             >
               Hermes backend
             </button>
             <button
               type="button"
-              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              className="ui-btn-secondary w-full px-3 py-2 text-[11px] font-semibold tracking-[0.05em] sm:w-auto sm:py-1.5"
               onClick={useCustomPreset}
             >
               Custom backend
             </button>
             <button
               type="button"
-              className="ui-btn-secondary px-3 py-1.5 text-[11px] font-semibold tracking-[0.05em]"
+              className="ui-btn-secondary w-full px-3 py-2 text-[11px] font-semibold tracking-[0.05em] sm:w-auto sm:py-1.5"
               onClick={useOpenClawPreset}
             >
               OpenClaw backend
