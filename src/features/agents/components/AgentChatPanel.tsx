@@ -89,6 +89,15 @@ const TEXT_ATTACHMENT_EXTENSIONS = new Set([
   "log",
 ]);
 const MAX_ATTACHMENT_TEXT_CHARS = 12_000;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+type UploadAttachment = {
+  id: string;
+  name: string;
+  url: string;
+  contentType: string;
+  extractedText?: string;
+};
 
 const isTextAttachmentFile = (file: File): boolean => {
   const mime = file.type.trim().toLowerCase();
@@ -112,6 +121,19 @@ const buildAttachmentPromptBlock = (fileName: string, content: string): string =
     content,
     `[End attached reference: ${fileName}]`,
   ].join("\n");
+
+const buildUploadedAttachmentPromptBlock = (attachment: UploadAttachment): string => {
+  const lines = [
+    `[Attached file: ${attachment.name}]`,
+    `URL: ${attachment.url}`,
+    `Content-Type: ${attachment.contentType}`,
+  ];
+  if (attachment.extractedText) {
+    lines.push("", attachment.extractedText);
+  }
+  lines.push(`[End attached file: ${attachment.name}]`);
+  return lines.join("\n");
+};
 
 const stableStringHash = (value: string): number => {
   let hash = 0;
@@ -931,6 +953,8 @@ const AgentChatComposer = memo(function AgentChatComposer({
   onKeyDown,
   onSend,
   onAttachmentFiles,
+  attachments,
+  onRemoveAttachment,
   onVoiceToggle,
   onStop,
   canSend,
@@ -963,6 +987,8 @@ const AgentChatComposer = memo(function AgentChatComposer({
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
   onAttachmentFiles: (event: ChangeEvent<HTMLInputElement>) => void;
+  attachments: UploadAttachment[];
+  onRemoveAttachment: (id: string) => void;
   onVoiceToggle?: () => void;
   onStop: () => void;
   canSend: boolean;
@@ -1179,6 +1205,42 @@ const AgentChatComposer = memo(function AgentChatComposer({
             </button>
           </div>
         ) : null}
+        {attachments.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {attachments.map((attachment) => {
+              const isImage = attachment.contentType.startsWith("image/");
+              return (
+                <div
+                  key={attachment.id}
+                  className="relative overflow-hidden rounded-lg border border-border/70 bg-card/90"
+                >
+                  {isImage ? (
+                    <img
+                      src={attachment.url}
+                      alt={attachment.name}
+                      className="h-16 w-16 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center px-2 text-center font-mono text-[10px] text-muted-foreground">
+                      File
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="absolute right-1 top-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-black"
+                    aria-label={`Remove attachment ${attachment.name}`}
+                    onClick={() => onRemoveAttachment(attachment.id)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                  <div className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/85 to-transparent px-1 py-0.5 text-[10px] text-white">
+                    {attachment.name}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
         {voiceStatusText || voiceError || attachmentStatus ? (
           <div
             className={`mb-2 rounded-md border px-2.5 py-1.5 font-mono text-[10px] tracking-[0.02em] ${
@@ -1197,7 +1259,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
             type="file"
             className="hidden"
             multiple
-            accept=".txt,.md,.markdown,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.kt,.sql,.html,.css,.xml,.yaml,.yml,.csv,.log,text/*,application/json,application/xml"
+            accept=".txt,.md,.markdown,.json,.js,.jsx,.ts,.tsx,.py,.rb,.go,.rs,.java,.kt,.sql,.html,.css,.xml,.yaml,.yml,.csv,.log,.png,.jpg,.jpeg,.gif,.webp,.pdf,text/*,application/json,application/xml,image/*,application/pdf"
             onChange={onAttachmentFiles}
           />
           <textarea
@@ -1214,8 +1276,8 @@ const AgentChatComposer = memo(function AgentChatComposer({
             type="button"
             onClick={() => attachmentInputRef.current?.click()}
             disabled={!canSend}
-            aria-label="Attach text files"
-            title="Attach text files"
+            aria-label="Attach files"
+            title="Attach files"
           >
             <span className="inline-flex items-center gap-1.5">
               <Paperclip className="h-3.5 w-3.5" />
@@ -1300,6 +1362,7 @@ export const AgentChatPanel = ({
   const [renameDraft, setRenameDraft] = useState(agent.name);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [attachmentStatus, setAttachmentStatus] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<UploadAttachment[]>([]);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
@@ -1345,6 +1408,8 @@ export const AgentChatPanel = ({
       };
       plainDraftRef.current = agent.draft;
       setDraftValue(agent.draft);
+      setAttachments([]);
+      setAttachmentStatus(null);
       return;
     }
     if (agent.draft === plainDraftRef.current) return;
@@ -1391,15 +1456,18 @@ export const AgentChatPanel = ({
     (message: string) => {
       if (!canSend) return;
       const trimmed = message.trim();
-      if (!trimmed) return;
+      const attachmentBlocks = attachments.map(buildUploadedAttachmentPromptBlock);
+      const finalMessage = [trimmed, ...attachmentBlocks].filter(Boolean).join("\n\n").trim();
+      if (!finalMessage) return;
       plainDraftRef.current = "";
       setDraftValue("");
+      setAttachments([]);
       setAttachmentStatus(null);
       onDraftChange("");
       scrollToBottomNextOutputRef.current = true;
-      onSend(trimmed);
+      onSend(finalMessage);
     },
-    [canSend, onDraftChange, onSend]
+    [attachments, canSend, onDraftChange, onSend]
   );
 
   const chatItems = useMemo(
@@ -1453,7 +1521,7 @@ export const AgentChatPanel = ({
     () => resolveEmptyChatIntroMessage(agent.agentId, agent.sessionEpoch),
     [agent.agentId, agent.sessionEpoch]
   );
-  const sendDisabled = !canSend || !draftValue.trim();
+  const sendDisabled = !canSend || (!draftValue.trim() && attachments.length === 0);
 
   const handleComposerChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -1485,31 +1553,43 @@ export const AgentChatPanel = ({
       const files = Array.from(event.target.files ?? []);
       event.target.value = "";
       if (files.length === 0) return;
-      const unsupported = files.filter((file) => !isTextAttachmentFile(file));
-      const supported = files.filter((file) => isTextAttachmentFile(file));
+      const oversized = files.filter((file) => file.size > MAX_UPLOAD_BYTES);
+      const supported = files.filter((file) => file.size <= MAX_UPLOAD_BYTES);
       if (supported.length === 0) {
-        setAttachmentStatus("Only text/code/markdown-style files can be attached right now.");
+        setAttachmentStatus("All selected files exceeded the 10 MB upload limit.");
         return;
       }
       try {
-        const blocks = await Promise.all(
+        const uploaded = await Promise.all(
           supported.map(async (file) => {
-            const rawText = await file.text();
-            const normalizedText = rawText.trim();
-            const clippedText =
-              normalizedText.length > MAX_ATTACHMENT_TEXT_CHARS
-                ? `${normalizedText.slice(0, MAX_ATTACHMENT_TEXT_CHARS).trimEnd()}\n[Truncated]`
-                : normalizedText;
-            return buildAttachmentPromptBlock(file.name, clippedText);
+            const formData = new FormData();
+            formData.append("file", file);
+            const response = await fetch("/api/files/upload", {
+              method: "POST",
+              body: formData,
+            });
+            const payload = (await response.json()) as Record<string, unknown>;
+            if (!response.ok) {
+              const message =
+                typeof payload.error === "string"
+                  ? payload.error
+                  : `Failed to upload ${file.name}.`;
+              throw new Error(message);
+            }
+            return {
+              id: String(payload.id ?? ""),
+              name: String(payload.name ?? file.name),
+              url: String(payload.url ?? ""),
+              contentType: String(payload.contentType ?? file.type ?? "application/octet-stream"),
+              extractedText:
+                typeof payload.extractedText === "string" ? payload.extractedText : undefined,
+            } satisfies UploadAttachment;
           })
         );
-        const nextValue = [draftValue.trim(), ...blocks].filter(Boolean).join("\n\n");
-        plainDraftRef.current = nextValue;
-        setDraftValue(nextValue);
-        onDraftChange(nextValue);
-        const statusParts = [`Attached ${supported.length} file${supported.length === 1 ? "" : "s"}.`];
-        if (unsupported.length > 0) {
-          statusParts.push(`${unsupported.length} unsupported file${unsupported.length === 1 ? "" : "s"} skipped.`);
+        setAttachments((current) => [...current, ...uploaded]);
+        const statusParts = [`Uploaded ${uploaded.length} file${uploaded.length === 1 ? "" : "s"}.`];
+        if (oversized.length > 0) {
+          statusParts.push(`${oversized.length} oversized file${oversized.length === 1 ? "" : "s"} skipped.`);
         }
         setAttachmentStatus(statusParts.join(" "));
         scrollToBottomNextOutputRef.current = true;
@@ -1519,8 +1599,12 @@ export const AgentChatPanel = ({
         );
       }
     },
-    [draftValue, onDraftChange]
+    []
   );
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }, []);
 
   const handleVoiceToggle = useCallback(
     () => {
@@ -1775,6 +1859,8 @@ export const AgentChatPanel = ({
             onKeyDown={handleComposerKeyDown}
             onSend={handleComposerSend}
             onAttachmentFiles={handleAttachmentFiles}
+            attachments={attachments}
+            onRemoveAttachment={handleRemoveAttachment}
             onVoiceToggle={handleVoiceToggle}
             onStop={onStopRun}
             canSend={canSend}
