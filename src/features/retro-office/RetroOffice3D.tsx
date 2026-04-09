@@ -53,7 +53,10 @@ import { DEFAULT_OFFICE_AGENT_STATE_MAPPING } from "@/lib/office/agentStateMappi
 import type { StandupMeeting } from "@/lib/office/standup/types";
 import type { SkillStatusEntry } from "@/lib/skills/types";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
-import type { OfficeAgentStateMapping } from "@/lib/office/agentStateMapping";
+import type {
+  OfficeAgentStateMapping,
+  OfficeAgentStateMappingPatch,
+} from "@/lib/office/agentStateMapping";
 import type {
   TaskBoardCard,
   TaskBoardStatus,
@@ -2474,7 +2477,7 @@ export function RetroOffice3D({
   onRemoteOfficePresenceUrlChange?: (url: string) => void;
   onRemoteOfficeGatewayUrlChange?: (url: string) => void;
   onRemoteOfficeTokenChange?: (token: string) => void;
-  onAgentStateMappingChange?: (mapping: OfficeAgentStateMapping) => void;
+  onAgentStateMappingChange?: (mapping: OfficeAgentStateMappingPatch) => void;
   onVoiceRepliesToggle?: (enabled: boolean) => void;
   onVoiceRepliesVoiceChange?: (voiceId: string | null) => void;
   onVoiceRepliesSpeedChange?: (speed: number) => void;

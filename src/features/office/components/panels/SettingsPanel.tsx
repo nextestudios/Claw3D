@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   OFFICE_RENDERABLE_AGENT_STATUSES,
   type OfficeAgentStateMapping,
+  type OfficeAgentStateMappingPatch,
   type OfficeRenderableAgentStatus,
 } from "@/lib/office/agentStateMapping";
 import { CURATED_ELEVENLABS_VOICES } from "@/lib/voiceReply/catalog";
@@ -25,9 +26,7 @@ type SettingsPanelProps = {
   officeTitleLoaded: boolean;
   onOfficeTitleChange: (title: string) => void;
   agentStateMapping: OfficeAgentStateMapping;
-  onAgentStateMappingChange: (
-    next: Partial<OfficeAgentStateMapping>,
-  ) => void;
+  onAgentStateMappingChange: (next: OfficeAgentStateMappingPatch) => void;
   remoteOfficeEnabled: boolean;
   remoteOfficeSourceKind: "presence_endpoint" | "openclaw_gateway";
   remoteOfficeLabel: string;
