@@ -396,7 +396,7 @@ const resolveOfficeMutationGuardMessage = (guardReason?: string) => {
 };
 
 const PHONE_BOOTH_ASSISTANT_FALLBACK_RE =
-  /\b(?:i\s+)?can(?:not|['’]t)\s+(?:place|make)\s+(?:phone\s+)?calls?\b/i;
+  /\b(?:i\s+)?can(?:not|['â€™]t)\s+(?:place|make)\s+(?:phone\s+)?calls?\b/i;
 
 const shouldSuppressPhoneBoothAssistantReply = (params: {
   agents: AgentState[];
@@ -738,7 +738,7 @@ const normalizeOfficeFeedText = (
     return normalized;
   }
   if (normalized.length <= maxChars) return normalized;
-  return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+  return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}â€¦`;
 };
 
 const resolveHistoryInference = (
