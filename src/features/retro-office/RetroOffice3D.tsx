@@ -49,6 +49,7 @@ import { buildMockTextMessageScenario } from "@/lib/office/text/mock";
 import type { MockTextMessageScenario } from "@/lib/office/text/types";
 import type { OfficeDeskMonitor } from "@/lib/office/deskMonitor";
 import type { OfficeAnimationState } from "@/lib/office/eventTriggers";
+import { DEFAULT_OFFICE_AGENT_STATE_MAPPING } from "@/lib/office/agentStateMapping";
 import type { StandupMeeting } from "@/lib/office/standup/types";
 import type { SkillStatusEntry } from "@/lib/skills/types";
 import type { StudioGatewayAdapterType } from "@/lib/studio/settings";
@@ -2344,6 +2345,7 @@ export function RetroOffice3D({
   remoteOfficeStatusText = "Remote office disabled.",
   remoteLayoutSnapshot = null,
   remoteOfficeTokenConfigured = false,
+  agentStateMapping = DEFAULT_OFFICE_AGENT_STATE_MAPPING,
   voiceRepliesEnabled = false,
   voiceRepliesVoiceId = null,
   voiceRepliesSpeed = 1,
@@ -2355,6 +2357,7 @@ export function RetroOffice3D({
   onRemoteOfficePresenceUrlChange,
   onRemoteOfficeGatewayUrlChange,
   onRemoteOfficeTokenChange,
+  onAgentStateMappingChange,
   onVoiceRepliesToggle,
   onVoiceRepliesVoiceChange,
   onVoiceRepliesSpeedChange,
