@@ -580,67 +580,67 @@ async function startAdapter() {
       const { id, method, params } = frame;
       if (typeof id !== "string" || typeof method !== "string") return;
 
-      if (method === "connect") {
-        connected = true;
-        const agents = await fetchCompanyAgents(companyId);
-        const defaultAgent = agents[0] || { id: MAIN_AGENT_ID, name: PAPERCLIP_AGENT_LABEL };
-        send({
-          type: "res",
-          id,
-          ok: true,
-          payload: {
-            type: "hello-ok",
-            protocol: 3,
-            adapterType: "paperclip",
-            features: {
-              methods: [
-                "agents.list",
-                "sessions.list",
-                "sessions.preview",
-                "sessions.patch",
-                "sessions.reset",
-                "chat.send",
-                "chat.abort",
-                "chat.history",
-                "agent.wait",
-                "status",
-                "models.list",
-                "config.get",
-                "config.set",
-                "config.patch",
-                "skills.status",
-                "exec.approvals.get",
-                "exec.approvals.set",
-                "exec.approval.resolve",
-                "wake",
-                "cron.list",
-              ],
-              events: ["chat", "presence", "heartbeat"],
-            },
-            snapshot: {
-              health: {
-                agents: agents.map((agent) => ({
-                  agentId: agent.id,
-                  name: agent.name,
-                  isDefault: agent.id === defaultAgent.id,
-                })),
-                defaultAgentId: defaultAgent.id,
-              },
-              sessionDefaults: { mainKey: MAIN_KEY },
-            },
-            auth: { role: "operator", scopes: ["operator.admin"] },
-            policy: { tickIntervalMs: 30000 },
-          },
-        });
-        return;
-      }
-
-      if (!connected) {
-        send(resErr(id, "not_connected", "Send connect first."));
-        return;
-      }
-
       try {
+        if (method === "connect") {
+          const agents = await fetchCompanyAgents(companyId);
+          const defaultAgent = agents[0] || { id: MAIN_AGENT_ID, name: PAPERCLIP_AGENT_LABEL };
+          connected = true;
+          send({
+            type: "res",
+            id,
+            ok: true,
+            payload: {
+              type: "hello-ok",
+              protocol: 3,
+              adapterType: "paperclip",
+              features: {
+                methods: [
+                  "agents.list",
+                  "sessions.list",
+                  "sessions.preview",
+                  "sessions.patch",
+                  "sessions.reset",
+                  "chat.send",
+                  "chat.abort",
+                  "chat.history",
+                  "agent.wait",
+                  "status",
+                  "models.list",
+                  "config.get",
+                  "config.set",
+                  "config.patch",
+                  "skills.status",
+                  "exec.approvals.get",
+                  "exec.approvals.set",
+                  "exec.approval.resolve",
+                  "wake",
+                  "cron.list",
+                ],
+                events: ["chat", "presence", "heartbeat"],
+              },
+              snapshot: {
+                health: {
+                  agents: agents.map((agent) => ({
+                    agentId: agent.id,
+                    name: agent.name,
+                    isDefault: agent.id === defaultAgent.id,
+                  })),
+                  defaultAgentId: defaultAgent.id,
+                },
+                sessionDefaults: { mainKey: MAIN_KEY },
+              },
+              auth: { role: "operator", scopes: ["operator.admin"] },
+              policy: { tickIntervalMs: 30000 },
+            },
+          });
+          return;
+        }
+
+        if (!connected) {
+          send(resErr(id, "not_connected", "Send connect first."));
+          return;
+        }
+
         const response = await handleMethod(
           method,
           params,
@@ -650,6 +650,9 @@ async function startAdapter() {
         );
         send(response);
       } catch (error) {
+        if (method === "connect") {
+          connected = false;
+        }
         send(
           resErr(
             id,
