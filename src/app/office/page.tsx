@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
 import { AgentStoreProvider } from "@/features/agents/state/store";
+import { ClawFCProvider } from "@/lib/clawfc/context";
 import { OfficeScreen } from "@/features/office/screens/OfficeScreen";
 
 const ENABLED_RE = /^(1|true|yes|on)$/i;
@@ -35,9 +36,11 @@ export default function OfficePage() {
 
   return (
     <AgentStoreProvider>
-      <Suspense fallback={<OfficeLoadingFallback />}>
-        <OfficeScreen showOpenClawConsole={showOpenClawConsole} />
-      </Suspense>
+      <ClawFCProvider>
+        <Suspense fallback={<OfficeLoadingFallback />}>
+          <OfficeScreen showOpenClawConsole={showOpenClawConsole} />
+        </Suspense>
+      </ClawFCProvider>
     </AgentStoreProvider>
   );
 }
