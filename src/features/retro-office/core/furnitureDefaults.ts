@@ -62,8 +62,8 @@ const DEFAULT_JUKEBOX: FurnitureSeed = {
 
 const DEFAULT_SHOP: FurnitureSeed = {
   type: "shop",
-  x: 320,
-  y: 840,
+  x: 140,
+  y: 820,
   facing: 0,
 };
 
@@ -117,15 +117,28 @@ const DEFAULT_DINING_ITEMS: FurnitureSeed[] = [
 ];
 
 const DEFAULT_SHOPPING_STRIP_ITEMS: FurnitureSeed[] = [
-  { type: "table_rect", x: 230, y: 820, w: 110, h: 40, facing: 0 },
-  { type: "vending", x: 470, y: 790, facing: 0 },
-  { type: "table_rect", x: 670, y: 870, w: 120, h: 40, facing: 0 },
-  { type: "plant", x: 210, y: 930 },
-  { type: "plant", x: 520, y: 930 },
-  { type: "plant", x: 860, y: 930 },
-  { type: "couch", x: 1010, y: 820, w: 90, h: 30, facing: 0 },
-  { type: "couch", x: 1200, y: 820, w: 90, h: 30, facing: 0 },
-  { type: "couch", x: 1390, y: 820, w: 90, h: 30, facing: 0 },
+  { type: "table_rect", x: 120, y: 780, w: 120, h: 42, facing: 0 },
+  { type: "vending", x: 120, y: 930, facing: 0 },
+  { type: "bookshelf", x: 420, y: 780, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 420, y: 930, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 650, y: 780, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 650, y: 930, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 880, y: 780, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 880, y: 930, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 1110, y: 780, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 1110, y: 930, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 1340, y: 780, w: 80, h: 120, facing: 0 },
+  { type: "bookshelf", x: 1340, y: 930, w: 80, h: 120, facing: 0 },
+  { type: "table_rect", x: 1560, y: 790, w: 120, h: 42, facing: 0 },
+  { type: "table_rect", x: 1560, y: 930, w: 120, h: 42, facing: 0 },
+  { type: "couch", x: 1490, y: 1010, w: 90, h: 30, facing: 0 },
+  { type: "couch", x: 1640, y: 1010, w: 90, h: 30, facing: 0 },
+  { type: "plant", x: 300, y: 1030 },
+  { type: "plant", x: 560, y: 1030 },
+  { type: "plant", x: 790, y: 1030 },
+  { type: "plant", x: 1020, y: 1030 },
+  { type: "plant", x: 1250, y: 1030 },
+  { type: "plant", x: 1480, y: 1030 },
 ];
 
 const DEFAULT_SERVER_ROOM_ITEMS: FurnitureSeed[] = [

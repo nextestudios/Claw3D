@@ -137,7 +137,7 @@ export type SmsBoothRoute = {
 };
 
 export type ShopRoute = {
-  stage: "approach" | "counter";
+  stage: "entrance" | "aisle" | "checkout";
   targetX: number;
   targetY: number;
   facing: number;

@@ -1,3 +1,4 @@
+import { SHOPPING_ZONE } from "@/features/retro-office/core/district";
 import { getItemBaseSize } from "@/features/retro-office/core/geometry";
 import type {
   FacingPoint,
@@ -5,9 +6,21 @@ import type {
   ShopRoute,
 } from "@/features/retro-office/core/types";
 
+export const SHOP_ENTRY_TARGET: FacingPoint = {
+  x: 900,
+  y: SHOPPING_ZONE.minY + 40,
+  facing: 0,
+};
+
+export const SHOP_AISLE_TARGET: FacingPoint = {
+  x: 980,
+  y: 910,
+  facing: 0,
+};
+
 export const SHOP_TARGET: FacingPoint = {
-  x: 280,
-  y: 840,
+  x: 180,
+  y: 920,
   facing: 0,
 };
 
@@ -18,40 +31,57 @@ export const resolveShopRoute = (
 ): ShopRoute => {
   if (!item) {
     return {
-      stage: "counter",
+      stage: "checkout",
       targetX: SHOP_TARGET.x,
       targetY: SHOP_TARGET.y,
       facing: SHOP_TARGET.facing,
     };
   }
   const { width, height } = getItemBaseSize(item);
-  const centerY = item.y + height / 2;
-  const approachTarget = {
+  const checkoutTarget = {
     x: item.x + width / 2,
-    y: item.y + height + 50,
+    y: item.y + height + 44,
     facing: 0,
   };
-  const counterTarget = {
-    x: item.x + width / 2,
-    y: centerY,
-    facing: 0,
-  };
-
-  const atCounter =
-    y <= approachTarget.y + 6 || Math.hypot(x - approachTarget.x, y - approachTarget.y) < 18;
-  if (atCounter) {
+  const closeToCheckout =
+    Math.hypot(x - checkoutTarget.x, y - checkoutTarget.y) < 44;
+  if (closeToCheckout) {
     return {
-      stage: "counter",
-      targetX: counterTarget.x,
-      targetY: counterTarget.y,
-      facing: counterTarget.facing,
+      stage: "checkout",
+      targetX: checkoutTarget.x,
+      targetY: checkoutTarget.y,
+      facing: checkoutTarget.facing,
+    };
+  }
+
+  const closeToAisle =
+    y >= SHOPPING_ZONE.minY + 70 &&
+    Math.hypot(x - SHOP_AISLE_TARGET.x, y - SHOP_AISLE_TARGET.y) < 90;
+  if (closeToAisle) {
+    return {
+      stage: "checkout",
+      targetX: checkoutTarget.x,
+      targetY: checkoutTarget.y,
+      facing: checkoutTarget.facing,
+    };
+  }
+
+  const enteredStore =
+    y >= SHOP_ENTRY_TARGET.y - 10 ||
+    Math.hypot(x - SHOP_ENTRY_TARGET.x, y - SHOP_ENTRY_TARGET.y) < 70;
+  if (enteredStore) {
+    return {
+      stage: "aisle",
+      targetX: SHOP_AISLE_TARGET.x,
+      targetY: SHOP_AISLE_TARGET.y,
+      facing: SHOP_AISLE_TARGET.facing,
     };
   }
 
   return {
-    stage: "approach",
-    targetX: approachTarget.x,
-    targetY: approachTarget.y,
-    facing: approachTarget.facing,
+    stage: "entrance",
+    targetX: SHOP_ENTRY_TARGET.x,
+    targetY: SHOP_ENTRY_TARGET.y,
+    facing: SHOP_ENTRY_TARGET.facing,
   };
 };
