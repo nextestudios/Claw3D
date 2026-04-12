@@ -6,6 +6,7 @@ import { createDefaultAgentAvatarProfile } from "@/lib/avatars/profile";
 import {
   AGENT_SCALE,
   WALK_ANIM_SPEED,
+  WALK_SPEED,
 } from "@/features/retro-office/core/constants";
 import { toWorld } from "@/features/retro-office/core/geometry";
 import type {
@@ -97,7 +98,25 @@ export const AgentModel = memo(function AgentModel({
       : undefined;
     const workoutStyle = agent.workoutStyle ?? "lift";
     const frameValue = agent.frame + (agent.phaseOffset ?? 0) / WALK_ANIM_SPEED;
-    const walkPhase = Math.sin(frameValue * WALK_ANIM_SPEED);
+    const walkSpeedRatio = THREE.MathUtils.clamp(
+      (agent.walkSpeed ?? WALK_SPEED) / WALK_SPEED,
+      1,
+      4,
+    );
+    const walkCycle = frameValue * WALK_ANIM_SPEED * (0.8 + walkSpeedRatio * 0.12);
+    const walkPhase = Math.sin(walkCycle);
+    const walkLiftPhase = Math.abs(Math.sin(walkCycle));
+    const walkSwing = THREE.MathUtils.clamp(
+      0.42 + (walkSpeedRatio - 1) * 0.08,
+      0.42,
+      0.68,
+    );
+    const walkLegSwing = THREE.MathUtils.clamp(walkSwing + 0.14, 0.56, 0.82);
+    const walkLean = THREE.MathUtils.clamp(
+      0.08 + (walkSpeedRatio - 1) * 0.018,
+      0.08,
+      0.14,
+    );
     const workoutPhase = Math.sin(
       agent.frame * 0.18 + (agent.phaseOffset ?? 0),
     );
@@ -108,6 +127,8 @@ export const AgentModel = memo(function AgentModel({
     groupRef.current.rotation.x =
       agent.state === "sitting"
         ? -0.15
+        : agent.state === "walking"
+          ? walkLean
         : isDancing
           ? Math.sin(agent.frame * 0.18 + (agent.phaseOffset ?? 0)) * 0.06
           : isWorkout
@@ -127,7 +148,7 @@ export const AgentModel = memo(function AgentModel({
               : 0;
     const bounce =
       agent.state === "walking"
-        ? Math.sin(frameValue * WALK_ANIM_SPEED) * 0.04
+        ? walkLiftPhase * 0.07
         : isDancing
           ? 0.03 +
             Math.abs(Math.sin(agent.frame * 0.22 + (agent.phaseOffset ?? 0))) *
@@ -153,7 +174,10 @@ export const AgentModel = memo(function AgentModel({
         leftArmRef.current.rotation.x = -0.22;
         leftArmRef.current.rotation.z = -0.08;
       } else if (agent.state === "walking") {
-        leftArmRef.current.rotation.x = walkPhase * 0.4;
+        leftArmRef.current.rotation.x = walkPhase * walkSwing - 0.12;
+        leftArmRef.current.rotation.y = -0.04;
+        leftArmRef.current.rotation.z = -0.1 - walkLiftPhase * 0.05;
+        groupRef.current.rotation.z = Math.sin(walkCycle * 2) * 0.025;
       } else if (isDancing) {
         leftArmRef.current.rotation.x =
           -0.8 + Math.sin(agent.frame * 0.22) * 0.9;
@@ -212,7 +236,10 @@ export const AgentModel = memo(function AgentModel({
         rightArmRef.current.rotation.y = 0.18;
         rightArmRef.current.rotation.z = 0.08;
       } else if (agent.state === "walking") {
-        rightArmRef.current.rotation.x = -walkPhase * 0.4;
+        rightArmRef.current.rotation.x = -walkPhase * walkSwing - 0.12;
+        rightArmRef.current.rotation.y = 0.04;
+        rightArmRef.current.rotation.z = 0.1 + walkLiftPhase * 0.05;
+        groupRef.current.rotation.z = Math.sin(walkCycle * 2) * 0.025;
       } else if (isDancing) {
         rightArmRef.current.rotation.x =
           -0.8 - Math.sin(agent.frame * 0.22) * 0.9;
@@ -265,7 +292,7 @@ export const AgentModel = memo(function AgentModel({
     if (leftLegRef.current) {
       leftLegRef.current.rotation.x =
         agent.state === "walking"
-          ? walkPhase * 0.35
+          ? walkPhase * walkLegSwing + walkLiftPhase * 0.08
           : isDancing
             ? Math.sin(agent.frame * 0.22 + (agent.phaseOffset ?? 0)) * 0.35
             : isWorkout
@@ -285,7 +312,7 @@ export const AgentModel = memo(function AgentModel({
     if (rightLegRef.current) {
       rightLegRef.current.rotation.x =
         agent.state === "walking"
-          ? -walkPhase * 0.35
+          ? -walkPhase * walkLegSwing + walkLiftPhase * 0.08
           : isDancing
             ? -Math.sin(agent.frame * 0.22 + (agent.phaseOffset ?? 0)) * 0.35
             : isWorkout

@@ -5,7 +5,7 @@
  * and content slots for each onboarding phase.  Designed to be mounted
  * at the app root and dismissed once complete or skipped.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
 
 import {
@@ -73,6 +73,31 @@ export const OnboardingWizard = ({
     () => new Set(initialCompletedSteps ?? []),
   );
   const [managedByokReady, setManagedByokReady] = useState(false);
+
+  // In managed mode, skip straight to "company" when BYOK is already configured.
+  useEffect(() => {
+    if (!managedDeployment) return;
+    let cancelled = false;
+
+    fetch("/api/managed/byok", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((result) => {
+        if (cancelled) return;
+        const providers = Array.isArray(result.configuredProviders)
+          ? result.configuredProviders
+          : [];
+        if (providers.length > 0) {
+          setCompletedSteps(new Set<OnboardingStepId>(["welcome", "prerequisites", "byok"]));
+          setCurrentStep("company");
+          setManagedByokReady(true);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [managedDeployment]);
 
   const stepIndex = useMemo(
     () => steps.findIndex((step) => step.id === currentStep),
