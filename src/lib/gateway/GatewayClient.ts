@@ -723,7 +723,11 @@ export const useGatewayConnection = (
       const profile =
         adapterProfiles[value] ?? resolveDefaultStudioGatewayProfile(value, localGatewayDefaults);
       setGatewayUrl(profile.url);
-      setToken(profile.token);
+      // Prefer the token from the initial private settings load when the in-memory
+      // profile has an empty token (e.g. the profile was populated from the sanitized
+      // public API response which strips real token values).
+      const loadedToken = loadedGatewaySettings.current?.profiles?.[value]?.token ?? "";
+      setToken(profile.token || loadedToken);
       const loaded = loadedGatewaySettings.current;
       const nextHasLastKnownGood = Boolean(
         (loaded?.adapterType === value && loaded.hasLastKnownGood) ||
@@ -1113,11 +1117,20 @@ export const useGatewayConnection = (
   }, [localGatewayDefaults]);
 
   const disconnect = useCallback(() => {
-    gatewayDebugLog("disconnect", { selectedAdapterType });
+    gatewayDebugLog("disconnect", { selectedAdapterType, status });
     setError(null);
     setConnectErrorCode(null);
     wasManualDisconnectRef.current = true;
     setDetectedAdapterType(null);
+    // Always close an active WebSocket connection regardless of selectedAdapterType.
+    // selectedAdapterType may already reflect the *target* adapter when this runs
+    // (e.g. switching from openclaw → local sets selectedAdapterType before disconnect
+    // is called), so we guard on actual connection state instead.
+    if (status === "connected" || status === "connecting") {
+      client.disconnect();
+      clearGatewayBrowserSessionStorage();
+      return;
+    }
     if (
       selectedAdapterType === "custom" ||
       selectedAdapterType === "local" ||
@@ -1128,7 +1141,7 @@ export const useGatewayConnection = (
     }
     client.disconnect();
     clearGatewayBrowserSessionStorage();
-  }, [client, selectedAdapterType]);
+  }, [client, selectedAdapterType, status]);
 
   const clearError = useCallback(() => {
     setError(null);
