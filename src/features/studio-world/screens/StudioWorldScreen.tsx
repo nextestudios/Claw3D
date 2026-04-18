@@ -80,7 +80,6 @@ export function StudioWorldScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusLine, setStatusLine] = useState<string | null>(null);
-  const [showConnectionPanel, setShowConnectionPanel] = useState(false);
   const [name, setName] = useState("Studio Prototype");
   const [prompt, setPrompt] = useState(
     "A stylized collaborative 3D studio district with hero props, modular landmarks, and export-ready assets.",
@@ -293,15 +292,13 @@ export function StudioWorldScreen() {
         <HeaderBar
           status="disconnected"
           currentSection="studio"
-          onConnectionSettings={() => setShowConnectionPanel((current) => !current)}
+          onConnectionSettings={() => {
+            setStatusLine(
+              "Studio world and asset generation run locally here and do not require a gateway connection.",
+            );
+          }}
         />
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3 md:px-5 md:pb-5 md:pt-3">
-          {showConnectionPanel ? (
-            <div className="ui-card px-4 py-3 text-sm text-muted-foreground">
-              Claw3D Studio uses local clean-room generation today. Remote model workers can be attached behind
-              `/api/studio-world` in a future provider.
-            </div>
-          ) : null}
           {error ? (
             <div className="ui-alert-danger rounded-md px-4 py-2 text-sm">{error}</div>
           ) : null}
@@ -317,8 +314,8 @@ export function StudioWorldScreen() {
               </div>
               <h1 className="mt-2 text-2xl font-semibold text-foreground">Generate 3D worlds, assets, motion, and image-guided avatars.</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                This clean-room workflow is inspired by tools like Meshy, but implemented as Claw3D-native tooling and
-                data contracts.
+                Claw3D Studio runs locally in this app and does not require a gateway connection for world building or
+                asset generation.
               </p>
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-border/60 bg-surface-1/35 p-3">
