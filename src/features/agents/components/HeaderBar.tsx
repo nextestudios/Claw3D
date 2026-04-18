@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
@@ -8,12 +9,14 @@ type HeaderBarProps = {
   status: GatewayStatus;
   onConnectionSettings: () => void;
   showConnectionSettings?: boolean;
+  currentSection?: "office" | "studio";
 };
 
 export const HeaderBar = ({
   status,
   onConnectionSettings,
   showConnectionSettings = true,
+  currentSection,
 }: HeaderBarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -40,7 +43,31 @@ export const HeaderBar = ({
     <div className="ui-topbar relative z-[180]">
       <div className="grid h-10 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center px-3 sm:px-4 md:px-5">
         <div aria-hidden="true" />
-        <p className="truncate text-sm font-semibold tracking-[0.01em] text-foreground">Claw3D</p>
+        <div className="flex items-center justify-center gap-2">
+          <p className="truncate text-sm font-semibold tracking-[0.01em] text-foreground">Claw3D</p>
+          <div className="hidden items-center gap-1 rounded-full border border-border/70 bg-card/80 p-1 md:flex">
+            <Link
+              href="/office"
+              className={`rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors ${
+                currentSection === "office"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              }`}
+            >
+              Office
+            </Link>
+            <Link
+              href="/studio"
+              className={`rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors ${
+                currentSection === "studio"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              }`}
+            >
+              Studio
+            </Link>
+          </div>
+        </div>
         <div className="flex items-center justify-end gap-1">
           {status !== "disconnected" ? (
             <span

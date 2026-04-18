@@ -4199,6 +4199,22 @@ export function OfficeScreen({
 
   return (
     <main className="relative h-full w-full overflow-hidden bg-black">
+      <div className="pointer-events-none fixed left-4 top-4 z-40">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-cyan-400/25 bg-black/72 px-2 py-2 shadow-2xl backdrop-blur">
+          <div className="pl-1 font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-100/75">
+            Claw3D Studio
+          </div>
+          <button
+            type="button"
+            className="ui-btn-secondary px-3 py-1.5 text-xs font-semibold tracking-[0.05em] text-foreground"
+            onClick={() => {
+              router.push("/studio");
+            }}
+          >
+            Open
+          </button>
+        </div>
+      </div>
       {showGatewayLoadingOverlay ? (
         <div
           className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-[#120a05]/76"
