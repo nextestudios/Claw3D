@@ -52,7 +52,10 @@ const isEnabled = (value: string | undefined) => {
 };
 
 export const resolveStudioAiProvider = (): StudioAiProviderKind => {
-  if (process.env.CLAW3D_STUDIO_PROVIDER_URL?.trim() || isEnabled(process.env.CLAW3D_STUDIO_ENABLE_REAL_AI)) {
+  if (
+    process.env.CLAW3D_STUDIO_PROVIDER_URL?.trim() ||
+    isEnabled(process.env.CLAW3D_STUDIO_ENABLE_REAL_AI)
+  ) {
     return "self_hosted";
   }
   return "none";
@@ -88,6 +91,45 @@ export const buildStudioAiProviderAvailability = (): StudioProviderAvailability 
   };
 };
 
+export const checkSelfHostedProviderHealth = async () => {
+  const { baseUrl } = resolveSelfHostedProviderConfig();
+  const healthUrl = new URL("/health", baseUrl);
+  const response = await fetch(healthUrl, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Health check failed with status ${response.status}.`);
+  }
+  const body = (await response.json()) as { ok?: boolean };
+  if (!body?.ok) {
+    throw new Error("Health check did not return ok=true.");
+  }
+  return true;
+};
+
+export const getStudioAiProviderAvailability = async (): Promise<StudioProviderAvailability> => {
+  const provider = resolveStudioAiProvider();
+  if (provider !== "self_hosted") {
+    return buildStudioAiProviderAvailability();
+  }
+  const baseAvailability = buildStudioAiProviderAvailability();
+  try {
+    await checkSelfHostedProviderHealth();
+    return {
+      ...baseAvailability,
+      available: true,
+      message: "Self-hosted AI worker is reachable and ready.",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Worker health check failed.";
+    return {
+      ...baseAvailability,
+      available: false,
+      message: `Self-hosted AI worker is not reachable. ${message}`,
+    };
+  }
+};
+
 const resolveSelfHostedProviderConfig = () => {
   const baseUrl = process.env.CLAW3D_STUDIO_PROVIDER_URL?.trim() || SELF_HOSTED_API_BASE_URL;
   const apiKey = process.env.CLAW3D_STUDIO_PROVIDER_API_KEY?.trim() ?? "";
@@ -96,6 +138,9 @@ const resolveSelfHostedProviderConfig = () => {
   }
   return { baseUrl, apiKey };
 };
+
+export const getDefaultSelfHostedProviderUrl = () =>
+  process.env.CLAW3D_STUDIO_PROVIDER_URL?.trim() || SELF_HOSTED_API_BASE_URL;
 
 const mapStatus = (status: string | undefined): StudioAiTaskStatus => {
   if (

@@ -159,6 +159,13 @@ export function StudioWorldScreen() {
   }, [selectedProject]);
 
   useEffect(() => {
+    if (selectedProject) return;
+    if (!providerAvailability?.available) return;
+    if (providerAvailability.provider !== "self_hosted") return;
+    setProvider("self_hosted");
+  }, [providerAvailability, selectedProject]);
+
+  useEffect(() => {
     if (!selectedProject?.externalModel?.taskId) return;
     if (
       selectedProject.externalModel.status !== "pending" &&

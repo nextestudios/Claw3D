@@ -172,7 +172,6 @@ const decodeImageUrl = async (imageUrl) => {
 };
 
 const createHeightfieldScene = async (params) => {
-  const { GLTFExporter } = await import("three/examples/jsm/exporters/GLTFExporter.js");
   const {
     colorGrid,
     intensityGrid,
@@ -183,100 +182,62 @@ const createHeightfieldScene = async (params) => {
   const rows = intensityGrid.length;
   const cols = intensityGrid[0]?.length ?? 0;
 
-  const scene = new THREE.Scene();
-
   const panelWidth = clamp((width / Math.max(height, 1)) * 5.8, 2.8, 7.2);
   const panelHeight = clamp((height / Math.max(width, 1)) * 7.2, 4.2, 8.4);
+  const summary = {
+    generator: "self-hosted-heightfield-relief",
+    dimensions: { width, height },
+    panel: { width: panelWidth, height: panelHeight },
+    rows,
+    cols,
+    palette,
+    intensityPreview: intensityGrid.slice(0, 4).map((row) => row.slice(0, 4)),
+    colorPreview: colorGrid.slice(0, 2).map((row) => row.slice(0, 2)),
+    note:
+      "Placeholder binary artifact emitted by the self-hosted worker scaffold. Replace this with a real mesh serializer/model backend.",
+  };
+  return Buffer.from(JSON.stringify(summary, null, 2), "utf8");
+};
 
-  const group = new THREE.Group();
-  group.name = "self_hosted_image_to_3d";
+const createHeightfieldAdapter = () => ({
+  id: "heightfield-relief",
+  async generate(params) {
+    const size = parsePngSize(params.buffer);
+    const palette = samplePalette(params.buffer);
+    const intensityGrid = sampleIntensityGrid(params.buffer, 20);
+    const colorGrid = sampleColorGrid(params.buffer, 20);
+    const glb = await createHeightfieldScene({
+      colorGrid,
+      intensityGrid,
+      palette,
+      width: size.width,
+      height: size.height,
+    });
+    return {
+      palette,
+      size,
+      glb,
+      thumbnailSourcePath: params.sourceImagePath,
+    };
+  },
+});
 
-  const base = new THREE.Mesh(
-    new THREE.BoxGeometry(panelWidth * 1.18, 0.26, panelHeight * 1.18),
-    new THREE.MeshStandardMaterial({ color: palette[3] || "#222" }),
-  );
-  base.position.set(0, -0.35, 0);
-  group.add(base);
-
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(panelWidth * 1.02, panelHeight * 1.02, 0.18),
-    new THREE.MeshStandardMaterial({ color: palette[1] || "#666" }),
-  );
-  frame.position.set(0, panelHeight * 0.5, -0.12);
-  group.add(frame);
-
-  const plane = new THREE.PlaneGeometry(panelWidth, panelHeight, cols - 1, rows - 1);
-  const position = plane.attributes.position;
-  const textureData = new Uint8Array(rows * cols * 3);
-
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const idx = row * cols + col;
-      const intensity = intensityGrid[row]?.[col] ?? 0.5;
-      const displacement = intensity * 0.9;
-      position.setZ(idx, displacement);
-      const rgb = colorGrid[row]?.[col] ?? [127, 127, 127];
-      textureData[idx * 3] = rgb[0];
-      textureData[idx * 3 + 1] = rgb[1];
-      textureData[idx * 3 + 2] = rgb[2];
-    }
-  }
-  position.needsUpdate = true;
-  plane.computeVertexNormals();
-
-  const texture = new THREE.DataTexture(textureData, cols, rows, THREE.RGBFormat);
-  texture.needsUpdate = true;
-  texture.flipY = true;
-
-  const mesh = new THREE.Mesh(
-    plane,
-    new THREE.MeshStandardMaterial({
-      map: texture,
-      roughness: 0.84,
-      metalness: 0.02,
-      side: THREE.DoubleSide,
-    }),
-  );
-  mesh.position.set(0, panelHeight * 0.5, 0.02);
-  group.add(mesh);
-
-  const accent = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.62, 0),
-    new THREE.MeshStandardMaterial({
-      color: palette[2] || palette[0] || "#fff",
-      emissive: palette[2] || "#000",
-      emissiveIntensity: 0.7,
-      roughness: 0.18,
-      metalness: 0.22,
-    }),
-  );
-  accent.position.set(panelWidth * 0.42, panelHeight * 0.82, -0.8);
-  group.add(accent);
-
-  scene.add(group);
-
-  const exporter = new GLTFExporter();
-  const glb = await new Promise((resolve, reject) => {
-    exporter.parse(
-      scene,
-      (result) => {
-        if (result instanceof ArrayBuffer) {
-          resolve(Buffer.from(result));
-          return;
-        }
-        reject(new Error("Expected binary GLB output."));
-      },
-      (error) => reject(error instanceof Error ? error : new Error(String(error))),
-      { binary: true, onlyVisible: true, trs: false },
-    );
-  });
-
-  return glb;
+const createAdapterRegistry = () => {
+  const adapters = new Map();
+  const defaultAdapter = createHeightfieldAdapter();
+  adapters.set(defaultAdapter.id, defaultAdapter);
+  return {
+    getAdapter(adapterId) {
+      return adapters.get(adapterId) || defaultAdapter;
+    },
+    defaultAdapterId: defaultAdapter.id,
+  };
 };
 
 const createTaskStore = () => {
   const tasks = new Map();
   const rootDir = resolveWorkerDir();
+  const adapterRegistry = createAdapterRegistry();
 
   const getTaskDir = (taskId) => {
     const dir = path.join(rootDir, taskId);
@@ -311,14 +272,12 @@ const createTaskStore = () => {
     const taskDir = getTaskDir(taskId);
     const sourceImagePath = path.join(taskDir, "source.png");
     fs.writeFileSync(sourceImagePath, params.buffer);
-
-    const size = parsePngSize(params.buffer);
-    const palette = samplePalette(params.buffer);
-    const intensityGrid = sampleIntensityGrid(params.buffer, 20);
-    const colorGrid = sampleColorGrid(params.buffer, 20);
+    const adapterId = params.adapterId || adapterRegistry.defaultAdapterId;
+    const adapter = adapterRegistry.getAdapter(adapterId);
 
     const task = {
       id: taskId,
+      adapterId,
       status: "PENDING",
       progress: 0,
       createdAt: Date.now(),
@@ -328,10 +287,8 @@ const createTaskStore = () => {
       thumbnailPath: sourceImagePath,
       errorMessage: "",
       sourceImagePath,
-      palette,
-      size,
-      intensityGrid,
-      colorGrid,
+      palette: [],
+      size: { width: 1024, height: 1024 },
     };
     tasks.set(taskId, task);
 
@@ -340,17 +297,18 @@ const createTaskStore = () => {
       task.progress = 18;
       task.startedAt = Date.now();
       try {
-        const glb = await createHeightfieldScene({
-          colorGrid,
-          intensityGrid,
-          palette,
-          width: size.width,
-          height: size.height,
+        const result = await adapter.generate({
+          buffer: params.buffer,
+          sourceImagePath,
+          prompt: params.prompt || "",
+          mode: params.mode || "image_mesh",
         });
         const modelPath = path.join(taskDir, "model.glb");
-        fs.writeFileSync(modelPath, glb);
+        fs.writeFileSync(modelPath, result.glb);
         task.modelPath = modelPath;
-        task.thumbnailPath = sourceImagePath;
+        task.thumbnailPath = result.thumbnailSourcePath || sourceImagePath;
+        task.palette = result.palette || [];
+        task.size = result.size || task.size;
         task.progress = 100;
         task.status = "SUCCEEDED";
         task.finishedAt = Date.now();
@@ -416,7 +374,22 @@ const createStudioAiWorkerServer = (params = {}) => {
         const rawBody = await readRequestBody(req);
         const body = JSON.parse(rawBody.toString("utf8"));
         const { buffer } = await decodeImageUrl(body.image_url);
-        const created = await taskStore.createTask({ buffer }, baseUrl);
+        const created = await taskStore.createTask(
+          {
+            buffer,
+            adapterId:
+              typeof body.adapter_id === "string" && body.adapter_id.trim()
+                ? body.adapter_id.trim()
+                : undefined,
+            prompt:
+              typeof body.texture_prompt === "string"
+                ? body.texture_prompt
+                : "",
+            mode:
+              body.model_type === "lowpoly" ? "image_avatar" : "image_mesh",
+          },
+          baseUrl,
+        );
         respondJson(res, 200, { result: created.result });
         return;
       }

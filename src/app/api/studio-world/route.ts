@@ -12,8 +12,10 @@ import {
 import { buildOfficeMapFromStudioProject } from "@/lib/studio-world/office";
 import {
   buildRealAiSummary,
+  buildStudioAiProviderAvailability,
   createSelfHostedImageTo3dTask,
   getSelfHostedImageTo3dTask,
+  getDefaultSelfHostedProviderUrl,
   isRealStudioAiEnabled,
   resolveStudioAiProvider,
 } from "@/lib/studio-world/provider";
@@ -107,26 +109,8 @@ const parseGenerationInput = (value: unknown): StudioGenerationInput | null => {
   };
 };
 
-const buildProviderAvailability = (): StudioProviderAvailability => {
-  const provider = resolveStudioAiProvider();
-  if (provider === "self_hosted") {
-    const enabled = isRealStudioAiEnabled();
-    return {
-      provider,
-      available: enabled,
-      configured: true,
-      message: enabled
-        ? "Real AI image-to-3D is enabled."
-        : "Self-hosted AI is configured but disabled until CLAW3D_STUDIO_ENABLE_REAL_AI is enabled.",
-    };
-  }
-  return {
-    provider: "local",
-    available: false,
-    configured: false,
-    message: "No real AI provider is configured. Studio will use local generators.",
-  };
-};
+const buildProviderAvailability = async (): Promise<StudioProviderAvailability> =>
+  buildStudioAiProviderAvailability();
 
 const buildExportManifest = (projectId: string) => {
   const project = getStudioProject(projectId);
@@ -217,7 +201,7 @@ export async function GET(request: Request) {
     }
     if (action === "provider-status") {
       return NextResponse.json(
-        { providerAvailability: buildProviderAvailability() },
+        { providerAvailability: await buildProviderAvailability() },
         { headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -279,7 +263,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         projects: listStudioProjects(),
-        providerAvailability: buildProviderAvailability(),
+        providerAvailability: await buildProviderAvailability(),
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -387,7 +371,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             project,
-            providerAvailability: buildProviderAvailability(),
+            providerAvailability: await buildProviderAvailability(),
           },
           { headers: { "Cache-Control": "no-store" } },
         );
@@ -395,7 +379,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           project: createStudioProject(input),
-          providerAvailability: buildProviderAvailability(),
+          providerAvailability: await buildProviderAvailability(),
         },
         { headers: { "Cache-Control": "no-store" } },
       );
