@@ -1,9 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { Environment, OrbitControls } from "@react-three/drei";
+import { Environment, OrbitControls, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { Suspense, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Group } from "three";
 
@@ -109,6 +109,68 @@ const SceneContents = ({ sceneDraft }: { sceneDraft: StudioWorldDraft }) => {
   );
 };
 
+const RemoteGlbContents = ({ glbUrl }: { glbUrl: string }) => {
+  const { scene } = useGLTF(glbUrl);
+  const preparedScene = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.updateMatrixWorld(true);
+
+    const box = new THREE.Box3().setFromObject(clone);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDimension = Math.max(size.x, size.y, size.z, 0.001);
+    const targetSize = 6;
+    const scale = targetSize / maxDimension;
+
+    clone.position.sub(center);
+    clone.scale.setScalar(scale);
+    clone.position.y += Math.max(size.y * scale * 0.5, 1.2);
+
+    clone.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      child.castShadow = true;
+      child.receiveShadow = true;
+    });
+
+    return clone;
+  }, [scene]);
+
+  return (
+    <>
+      <color attach="background" args={["#090d12"]} />
+      <fog attach="fog" args={["#111827", 14, 60]} />
+      <ambientLight intensity={0.9} color="#f4f7ff" />
+      <directionalLight
+        castShadow
+        position={[14, 18, 12]}
+        intensity={1.15}
+        color="#fff3dd"
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+      />
+      <directionalLight position={[-12, 10, -6]} intensity={0.4} color="#8bd6ff" />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[24, 24]} />
+        <meshStandardMaterial color="#121a22" roughness={0.96} metalness={0.01} />
+      </mesh>
+      <gridHelper
+        args={[24, 24, new THREE.Color("#3b82f6"), new THREE.Color("#334155")]}
+        position={[0, 0.02, 0]}
+      />
+      <primitive object={preparedScene} />
+      <Environment preset="city" />
+      <OrbitControls
+        enablePan={false}
+        minDistance={6}
+        maxDistance={28}
+        minPolarAngle={0.25}
+        maxPolarAngle={1.45}
+        target={[0, 2.2, 0]}
+      />
+    </>
+  );
+};
+
 type StudioWorldPreviewProps = {
   sceneDraft: StudioWorldDraft;
   referenceImage?: StudioSourceImageRecord | null;
@@ -122,6 +184,7 @@ export function StudioWorldPreview({
 }: StudioWorldPreviewProps) {
   const isRemoteAiProject = project?.provider === "self_hosted";
   const remoteReady = Boolean(project?.externalModel?.glbUrl);
+  const remoteGlbUrl = project?.externalModel?.glbUrl ?? null;
   const remoteThumbnailUrl = project?.externalModel?.thumbnailUrl ?? null;
   const previewLabel = isRemoteAiProject
     ? remoteReady
@@ -146,7 +209,13 @@ export function StudioWorldPreview({
           fov: 42,
         }}
       >
-        <SceneContents sceneDraft={sceneDraft} />
+        {remoteReady && remoteGlbUrl ? (
+          <Suspense fallback={<SceneContents sceneDraft={sceneDraft} />}>
+            <RemoteGlbContents glbUrl={remoteGlbUrl} />
+          </Suspense>
+        ) : (
+          <SceneContents sceneDraft={sceneDraft} />
+        )}
       </Canvas>
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/55 to-transparent px-4 py-3">
         <div>
