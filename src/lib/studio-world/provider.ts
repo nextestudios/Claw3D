@@ -52,7 +52,7 @@ const isEnabled = (value: string | undefined) => {
 };
 
 export const resolveStudioAiProvider = (): StudioAiProviderKind => {
-  if (process.env.CLAW3D_STUDIO_PROVIDER_URL?.trim()) {
+  if (process.env.CLAW3D_STUDIO_PROVIDER_URL?.trim() || isEnabled(process.env.CLAW3D_STUDIO_ENABLE_REAL_AI)) {
     return "self_hosted";
   }
   return "none";
@@ -70,10 +70,12 @@ export const buildStudioAiProviderAvailability = (): StudioProviderAvailability 
     return {
       provider: "self_hosted",
       available: enabled,
-      configured: Boolean(providerUrl),
+      configured: Boolean(providerUrl) || enabled,
       usingTestMode: false,
       message: enabled
-        ? "Self-hosted AI image-to-3D is enabled."
+        ? providerUrl
+          ? "Self-hosted AI image-to-3D is enabled."
+          : "Self-hosted AI image-to-3D is enabled using the default local worker endpoint."
         : "A self-hosted provider is configured but disabled until CLAW3D_STUDIO_ENABLE_REAL_AI is enabled.",
     };
   }
