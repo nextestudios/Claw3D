@@ -591,15 +591,162 @@ const createHeightfieldAdapter = () => ({
   },
 });
 
+const createPortraitVolumeScene = async (params) => {
+  const { GLTFExporter } = await import("three/examples/jsm/exporters/GLTFExporter.js");
+  const { colorGrid, intensityGrid, palette, width, height } = params;
+  const refinedIntensity = applyPortraitRelief(intensityGrid);
+  const rows = refinedIntensity.length;
+  const cols = refinedIntensity[0]?.length ?? 0;
+
+  const scene = new THREE.Scene();
+  const panelWidth = clamp((width / Math.max(height, 1)) * 6.2, 3.1, 7.8);
+  const panelHeight = clamp((height / Math.max(width, 1)) * 8.1, 4.8, 9.2);
+  const portraitMask = buildPortraitMask(rows, cols);
+  const cellWidth = panelWidth / Math.max(cols, 1);
+  const cellHeight = panelHeight / Math.max(rows, 1);
+
+  const root = new THREE.Group();
+  root.name = "self_hosted_portrait_volume";
+
+  const pedestal = new THREE.Mesh(
+    new THREE.CylinderGeometry(panelWidth * 0.52, panelWidth * 0.58, 0.42, 24),
+    new THREE.MeshStandardMaterial({
+      color: palette[3] || "#171717",
+      roughness: 0.92,
+      metalness: 0.02,
+    }),
+  );
+  pedestal.position.set(0, -0.4, 0);
+  root.add(pedestal);
+
+  const backPlate = new THREE.Mesh(
+    new THREE.BoxGeometry(panelWidth * 1.02, panelHeight * 1.02, 0.14),
+    new THREE.MeshStandardMaterial({
+      color: palette[1] || "#4b5563",
+      roughness: 0.86,
+      metalness: 0.04,
+    }),
+  );
+  backPlate.position.set(0, panelHeight * 0.48, -0.18);
+  root.add(backPlate);
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const mask = portraitMask[row]?.[col] ?? 0;
+      if (mask < 0.06) continue;
+
+      const intensity = refinedIntensity[row]?.[col] ?? 0.5;
+      const rgb = colorGrid[row]?.[col] ?? [127, 127, 127];
+      const xNormalized = cols <= 1 ? 0.5 : col / (cols - 1);
+      const yNormalized = rows <= 1 ? 0.5 : row / (rows - 1);
+      const hairBias = smoothstep(0.04, 0.22, yNormalized) * (1 - smoothstep(0.38, 0.5, yNormalized));
+      const shoulderBias = smoothstep(0.62, 0.9, yNormalized) * 0.4;
+      const depth = 0.16 + intensity * 0.9 * mask + hairBias * 0.32 + shoulderBias * 0.22;
+      const centeredX = -panelWidth / 2 + cellWidth * col + cellWidth / 2;
+      const centeredY = panelHeight - (panelHeight / rows) * row - cellHeight / 2;
+
+      const box = new THREE.Mesh(
+        new THREE.BoxGeometry(cellWidth * 0.96, cellHeight * 0.96, depth),
+        new THREE.MeshStandardMaterial({
+          color: rgbToHex(rgb[0] ?? 127, rgb[1] ?? 127, rgb[2] ?? 127),
+          roughness: 0.72,
+          metalness: 0.05,
+        }),
+      );
+      box.position.set(centeredX, centeredY, depth * 0.5 - 0.04);
+      box.rotation.y = (xNormalized - 0.5) * 0.08;
+      root.add(box);
+    }
+  }
+
+  const collar = new THREE.Mesh(
+    new THREE.TorusGeometry(panelWidth * 0.18, 0.08, 12, 36),
+    new THREE.MeshStandardMaterial({
+      color: palette[2] || palette[0] || "#ffffff",
+      emissive: palette[2] || "#000000",
+      emissiveIntensity: 0.18,
+      roughness: 0.18,
+      metalness: 0.42,
+    }),
+  );
+  collar.position.set(0, panelHeight * 0.18, 0.46);
+  collar.rotation.x = Math.PI / 2;
+  root.add(collar);
+
+  const halo = new THREE.Mesh(
+    new THREE.TorusGeometry(panelWidth * 0.42, 0.04, 12, 48),
+    new THREE.MeshStandardMaterial({
+      color: palette[2] || palette[0] || "#ffffff",
+      emissive: palette[2] || "#000000",
+      emissiveIntensity: 0.35,
+      roughness: 0.2,
+      metalness: 0.24,
+    }),
+  );
+  halo.position.set(0, panelHeight * 0.58, -0.42);
+  halo.rotation.x = Math.PI / 2;
+  root.add(halo);
+
+  scene.add(root);
+
+  const exporter = new GLTFExporter();
+  const glb = await new Promise((resolve, reject) => {
+    exporter.parse(
+      scene,
+      (result) => {
+        if (result instanceof ArrayBuffer) {
+          resolve(Buffer.from(result));
+          return;
+        }
+        reject(new Error("Expected binary GLB output."));
+      },
+      (error) => reject(error instanceof Error ? error : new Error(String(error))),
+      { binary: true, onlyVisible: true, trs: false },
+    );
+  });
+
+  return glb;
+};
+
+const createPortraitVolumeAdapter = () => ({
+  id: "portrait-volume",
+  async generate(params) {
+    const raster = decodeRasterImage(params.buffer, params.mimeType);
+    const size = {
+      width: raster.width || parsePngSize(params.buffer).width,
+      height: raster.height || parsePngSize(params.buffer).height,
+    };
+    const sampleParams = { raster, buffer: params.buffer };
+    const palette = samplePalette(sampleParams);
+    const intensityGrid = sampleIntensityGrid(sampleParams, 18);
+    const colorGrid = sampleColorGrid(sampleParams, 18);
+    const glb = await createPortraitVolumeScene({
+      colorGrid,
+      intensityGrid,
+      palette,
+      width: size.width,
+      height: size.height,
+    });
+    return {
+      palette,
+      size,
+      glb,
+      thumbnailSourcePath: params.sourceImagePath,
+    };
+  },
+});
+
 const createAdapterRegistry = () => {
   const adapters = new Map();
-  const defaultAdapter = createHeightfieldAdapter();
-  adapters.set(defaultAdapter.id, defaultAdapter);
+  const heightfieldAdapter = createHeightfieldAdapter();
+  const portraitVolumeAdapter = createPortraitVolumeAdapter();
+  adapters.set(heightfieldAdapter.id, heightfieldAdapter);
+  adapters.set(portraitVolumeAdapter.id, portraitVolumeAdapter);
   return {
     getAdapter(adapterId) {
-      return adapters.get(adapterId) || defaultAdapter;
+      return adapters.get(adapterId) || portraitVolumeAdapter;
     },
-    defaultAdapterId: defaultAdapter.id,
+    defaultAdapterId: portraitVolumeAdapter.id,
   };
 };
 

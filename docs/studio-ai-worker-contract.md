@@ -128,15 +128,31 @@ Returns:
 
 The worker now supports adapter-based generation.
 
-Current adapter:
+Current adapters:
 
-- `heightfield-relief`
+- `portrait-volume` — default adapter
+- `heightfield-relief` — simpler fallback adapter
 
 Current behavior:
 
-- samples uploaded image colors and intensities
-- produces a relief-style GLB
+- decodes uploaded image pixels locally
+- samples intensities and colors from the decoded raster
+- produces GLB artifacts through internal geometry adapters
 - exposes a task lifecycle compatible with Studio
+
+### Adapter notes
+
+#### `portrait-volume`
+
+- default adapter for self-hosted image-to-3D jobs
+- biases the generated mesh toward a portrait-like volume
+- uses layered box volumes, collar/halo forms, and portrait masking
+
+#### `heightfield-relief`
+
+- simpler fallback adapter
+- creates a relief-style displaced panel from sampled intensity/color grids
+- useful as a baseline when stronger adapters are unavailable
 
 Next adapters can be added behind the same contract without changing Studio.
 
