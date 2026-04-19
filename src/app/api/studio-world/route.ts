@@ -104,6 +104,10 @@ const parseGenerationInput = (value: unknown): StudioGenerationInput | null => {
     sourceImage,
     imageMode: value.imageMode === "mesh" ? "mesh" : "avatar",
     provider: parseProvider(value.provider),
+    adapterId:
+      value.adapterId === "portrait_volume" || value.adapterId === "heightfield_relief"
+        ? value.adapterId
+        : undefined,
   };
 };
 
@@ -358,6 +362,7 @@ export async function POST(request: Request) {
           sourceImage: input.sourceImage,
           prompt: input.prompt,
           mode: "image_mesh",
+          adapterId: input.adapterId,
         });
         const project = createStudioPendingProject({
           input: {

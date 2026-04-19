@@ -764,6 +764,7 @@ const createTaskStore = () => {
   const toTaskObject = (task, baseUrl) => ({
     id: task.id,
     type: "image-to-3d",
+    adapter_id: task.adapterId,
     model_urls: task.modelPath
       ? {
           glb: `${baseUrl}/openapi/v1/image-to-3d/${task.id}/output/model.glb`,
@@ -845,6 +846,9 @@ const createTaskStore = () => {
   };
 
   return {
+    listAdapters() {
+      return adapterRegistry.listAdapters();
+    },
     initialize() {
       for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
@@ -897,6 +901,13 @@ const createStudioAiWorkerServer = (params = {}) => {
     try {
       if (req.method === "GET" && pathname === "/health") {
         respondJson(res, 200, { ok: true, service: "studio-ai-worker" });
+        return;
+      }
+
+      if (req.method === "GET" && pathname === "/openapi/v1/image-to-3d/adapters") {
+        respondJson(res, 200, {
+          adapters: taskStore.listAdapters(),
+        });
         return;
       }
 

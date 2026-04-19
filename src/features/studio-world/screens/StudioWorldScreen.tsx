@@ -10,6 +10,7 @@ import type {
   StudioProviderAvailability,
   StudioProjectRecord,
   StudioSourceImageRecord,
+  StudioWorkerAdapterKind,
   StudioWorldFocus,
   StudioWorldGenerationProvider,
   StudioWorldScale,
@@ -120,6 +121,7 @@ export function StudioWorldScreen() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageMode, setImageMode] = useState<"avatar" | "mesh">("avatar");
   const [provider, setProvider] = useState<StudioWorldGenerationProvider>("local");
+  const [workerAdapter, setWorkerAdapter] = useState<StudioWorkerAdapterKind>("portrait_volume");
   const [providerAvailability, setProviderAvailability] = useState<StudioProviderAvailability | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -156,6 +158,7 @@ export function StudioWorldScreen() {
     if (!selectedProject) return;
     setUploadedImage(selectedProject.sourceImages[0] ?? null);
     setProvider(selectedProject.provider ?? "local");
+    setWorkerAdapter(selectedProject.externalModel?.adapterId ?? "portrait_volume");
   }, [selectedProject]);
 
   useEffect(() => {
@@ -258,6 +261,7 @@ export function StudioWorldScreen() {
             sourceImage: uploadedImage,
             imageMode,
             provider,
+            workerAdapter,
           },
         }),
       });
@@ -603,6 +607,17 @@ export function StudioWorldScreen() {
                     </select>
                   </label>
                   <label className="block">
+                    <span className="mb-1.5 block text-xs font-medium text-foreground">Worker strategy</span>
+                    <select
+                      className="ui-input w-full"
+                      value={workerAdapter}
+                      onChange={(event) => setWorkerAdapter(event.target.value as StudioWorkerAdapterKind)}
+                    >
+                      <option value="portrait_volume">Portrait volume</option>
+                      <option value="heightfield_relief">Heightfield relief</option>
+                    </select>
+                  </label>
+                  <label className="block">
                     <span className="mb-1.5 block text-xs font-medium text-foreground">Style</span>
                     <select className="ui-input w-full" value={style} onChange={(event) => setStyle(event.target.value as StudioWorldStyle)}>
                       {STYLE_OPTIONS.map((option) => (
@@ -774,6 +789,11 @@ export function StudioWorldScreen() {
                           <span className="rounded-full bg-muted px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                             {project.provider}
                           </span>
+                          {project.externalModel?.adapterId ? (
+                            <span className="rounded-full bg-muted px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                              {project.externalModel.adapterId}
+                            </span>
+                          ) : null}
                         </div>
                       </button>
                       <div className="mt-3 text-[11px] text-muted-foreground">

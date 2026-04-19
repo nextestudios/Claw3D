@@ -74,6 +74,12 @@ Current supported optional fields:
 - `topology`
 - `target_polycount`
 - `should_remesh`
+- `adapter_id`
+
+Current adapter values:
+
+- `portrait-volume`
+- `heightfield-relief`
 
 Current response:
 

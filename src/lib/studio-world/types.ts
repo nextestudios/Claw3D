@@ -95,6 +95,8 @@ export type StudioWorldDraft = {
   assets: StudioWorldAssetDraft[];
 };
 
+export type StudioWorkerAdapterKind = "portrait_volume" | "heightfield_relief";
+
 export type StudioGenerationInput = {
   name: string;
   prompt: string;
@@ -105,6 +107,7 @@ export type StudioGenerationInput = {
   sourceImage?: StudioSourceImageRecord | null;
   imageMode?: "avatar" | "mesh";
   provider?: StudioWorldGenerationProvider;
+  adapterId?: StudioWorkerAdapterKind | null;
 };
 
 export type StudioGenerationJobRecord = {
@@ -126,9 +129,13 @@ export type StudioExternalModelRecord = {
   taskId: string;
   status: "pending" | "in_progress" | "completed" | "failed";
   progress: number;
+  adapterId?: StudioWorkerAdapterKind | null;
   glbUrl?: string | null;
   thumbnailUrl?: string | null;
   textureUrls?: Array<Record<string, string>>;
+  width?: number | null;
+  height?: number | null;
+  palette?: string[];
   errorMessage?: string | null;
   usingTestMode?: boolean;
 };
@@ -139,6 +146,8 @@ export type StudioProviderAvailability = {
   configured: boolean;
   usingTestMode?: boolean;
   message?: string;
+  adapterIds?: StudioWorkerAdapterKind[];
+  defaultAdapterId?: StudioWorkerAdapterKind | null;
 };
 
 export type StudioProjectRecord = {

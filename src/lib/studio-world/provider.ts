@@ -161,6 +161,7 @@ export const createSelfHostedImageTo3dTask = async (params: {
   sourceImage: StudioSourceImageRecord;
   prompt: string;
   mode: StudioWorldGenerationMode;
+  adapterId?: string | null;
 }) => {
   const { baseUrl, apiKey } = resolveSelfHostedProviderConfig();
   const payload = {
@@ -182,6 +183,11 @@ export const createSelfHostedImageTo3dTask = async (params: {
     ...(params.prompt.trim()
       ? {
           texture_prompt: params.prompt.trim().slice(0, 600),
+        }
+      : {}),
+    ...(params.adapterId?.trim()
+      ? {
+          adapter_id: params.adapterId.trim(),
         }
       : {}),
   };
