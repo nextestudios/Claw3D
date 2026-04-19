@@ -65,7 +65,7 @@ const parseGenerationInput = (value: unknown): StudioGenerationInput | null => {
   if (!isRecord(value)) return null;
   const name = asString(value.name) || "Untitled Studio World";
   const prompt = asString(value.prompt);
-  const parseSourceImageRecord = (candidate: unknown) => {
+  const parseSourceImageRecord = (candidate: unknown): StudioGenerationInput["sourceImage"] => {
     if (!isRecord(candidate)) return null;
     return {
       id: asString(candidate.id),
@@ -93,6 +93,13 @@ const parseGenerationInput = (value: unknown): StudioGenerationInput | null => {
             (entry): entry is number => typeof entry === "number" && Number.isFinite(entry),
           )
         : [],
+        role:
+          candidate.role === "front" ||
+          candidate.role === "side" ||
+          candidate.role === "back" ||
+          candidate.role === "detail"
+            ? candidate.role
+            : "front",
     };
   };
   const sourceImage = isRecord(value.sourceImage)

@@ -73,6 +73,13 @@ const writeTaskMetadata = (taskDir, task) => {
     thumbnailPath: task.thumbnailPath ? path.basename(task.thumbnailPath) : null,
     errorMessage: task.errorMessage,
     sourceImagePath: task.sourceImagePath ? path.basename(task.sourceImagePath) : null,
+    additionalImages: Array.isArray(task.additionalImages)
+      ? task.additionalImages.map((image) => ({
+          fileName: typeof image.fileName === "string" ? image.fileName : "",
+          mimeType: typeof image.mimeType === "string" ? image.mimeType : "",
+          role: typeof image.role === "string" ? image.role : "detail",
+        }))
+      : [],
     palette: task.palette,
     size: task.size,
   };
@@ -108,6 +115,7 @@ const loadTaskMetadata = (rootDir, taskId) => {
     thumbnailPath: revivePath(raw.thumbnailPath),
     errorMessage: typeof raw.errorMessage === "string" ? raw.errorMessage : "",
     sourceImagePath: revivePath(raw.sourceImagePath),
+    additionalImages: Array.isArray(raw.additionalImages) ? raw.additionalImages : [],
     palette: Array.isArray(raw.palette) ? raw.palette : [],
     size:
       raw.size && typeof raw.size === "object"
@@ -296,6 +304,23 @@ const sampleColorGrid = (params, cells = 20) => {
     grid.push(values);
   }
   return grid;
+};
+
+const averageColor = (values) => {
+  if (!Array.isArray(values) || values.length === 0) return [127, 127, 127];
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  for (const value of values) {
+    red += value?.[0] ?? 127;
+    green += value?.[1] ?? 127;
+    blue += value?.[2] ?? 127;
+  }
+  return [
+    Math.round(red / values.length),
+    Math.round(green / values.length),
+    Math.round(blue / values.length),
+  ];
 };
 
 const smoothGrid = (grid, iterations = 1) => {
@@ -574,8 +599,12 @@ const createHeightfieldAdapter = () => ({
     };
     const sampleParams = { raster, buffer: params.buffer };
     const palette = samplePalette(sampleParams);
-    const intensityGrid = sampleIntensityGrid(sampleParams, 24);
-    const colorGrid = sampleColorGrid(sampleParams, 24);
+    const intensityGrid = Array.isArray(params.fusedIntensityGrid) && params.fusedIntensityGrid.length > 0
+      ? params.fusedIntensityGrid
+      : sampleIntensityGrid(sampleParams, 24);
+    const colorGrid = Array.isArray(params.fusedColorGrid) && params.fusedColorGrid.length > 0
+      ? params.fusedColorGrid
+      : sampleColorGrid(sampleParams, 24);
     const glb = await createHeightfieldScene({
       colorGrid,
       intensityGrid,
@@ -719,8 +748,12 @@ const createPortraitVolumeAdapter = () => ({
     };
     const sampleParams = { raster, buffer: params.buffer };
     const palette = samplePalette(sampleParams);
-    const intensityGrid = sampleIntensityGrid(sampleParams, 18);
-    const colorGrid = sampleColorGrid(sampleParams, 18);
+    const intensityGrid = Array.isArray(params.fusedIntensityGrid) && params.fusedIntensityGrid.length > 0
+      ? params.fusedIntensityGrid
+      : sampleIntensityGrid(sampleParams, 18);
+    const colorGrid = Array.isArray(params.fusedColorGrid) && params.fusedColorGrid.length > 0
+      ? params.fusedColorGrid
+      : sampleColorGrid(sampleParams, 18);
     const glb = await createPortraitVolumeScene({
       colorGrid,
       intensityGrid,
@@ -801,6 +834,52 @@ const mergeRasterViews = (rasters) => {
   };
 };
 
+const roleWeight = (role) => {
+  if (role === "front") return 1;
+  if (role === "side") return 0.72;
+  if (role === "back") return 0.35;
+  if (role === "detail") return 0.55;
+  return 0.6;
+};
+
+const fuseIntensityViews = (views) => {
+  if (!Array.isArray(views) || views.length === 0) return [];
+  const baseGrid = views[0]?.intensityGrid ?? [];
+  return baseGrid.map((row, rowIndex) =>
+    row.map((_, colIndex) => {
+      let total = 0;
+      let weightTotal = 0;
+      for (const view of views) {
+        const value = view?.intensityGrid?.[rowIndex]?.[colIndex];
+        if (typeof value !== "number") continue;
+        const weight = roleWeight(view.role);
+        total += value * weight;
+        weightTotal += weight;
+      }
+      return weightTotal > 0 ? total / weightTotal : 0.5;
+    }),
+  );
+};
+
+const fuseColorViews = (views) => {
+  if (!Array.isArray(views) || views.length === 0) return [];
+  const baseGrid = views[0]?.colorGrid ?? [];
+  return baseGrid.map((row, rowIndex) =>
+    row.map((_, colIndex) => {
+      const palette = [];
+      for (const view of views) {
+        const color = view?.colorGrid?.[rowIndex]?.[colIndex];
+        if (!Array.isArray(color)) continue;
+        const copies = Math.max(1, Math.round(roleWeight(view.role) * 2));
+        for (let i = 0; i < copies; i += 1) {
+          palette.push(color);
+        }
+      }
+      return averageColor(palette);
+    }),
+  );
+};
+
 const createTaskStore = () => {
   const tasks = new Map();
   const rootDir = resolveWorkerDir();
@@ -867,8 +946,28 @@ const createTaskStore = () => {
       task.startedAt = Date.now();
       writeTaskMetadata(taskDir, task);
       try {
+        const baseRaster = decodeRasterImage(params.buffer, params.mimeType || "image/png");
+        const baseSampleParams = { raster: baseRaster, buffer: params.buffer };
+        const viewSamples = [
+          {
+            role: params.role || "front",
+            intensityGrid: sampleIntensityGrid(baseSampleParams, 18),
+            colorGrid: sampleColorGrid(baseSampleParams, 18),
+          },
+          ...(Array.isArray(params.additionalImages)
+            ? params.additionalImages.map((image) => {
+                const raster = decodeRasterImage(image.buffer, image.mimeType || "image/png");
+                const sampleParams = { raster, buffer: image.buffer };
+                return {
+                  role: image.role || "detail",
+                  intensityGrid: sampleIntensityGrid(sampleParams, 18),
+                  colorGrid: sampleColorGrid(sampleParams, 18),
+                };
+              })
+            : []),
+        ];
         const mergedRaster = mergeRasterViews([
-          decodeRasterImage(params.buffer, params.mimeType || "image/png"),
+          baseRaster,
           ...(Array.isArray(params.additionalImages)
             ? params.additionalImages.map((image) =>
                 decodeRasterImage(image.buffer, image.mimeType || "image/png"),
@@ -882,6 +981,8 @@ const createTaskStore = () => {
           sourceImagePath,
           prompt: params.prompt || "",
           mode: params.mode || "image_mesh",
+          fusedIntensityGrid: fuseIntensityViews(viewSamples),
+          fusedColorGrid: fuseColorViews(viewSamples),
         });
         const modelPath = path.join(taskDir, "model.glb");
         fs.writeFileSync(modelPath, result.glb);
@@ -997,6 +1098,10 @@ const createStudioAiWorkerServer = (params = {}) => {
             mode:
               body.model_type === "lowpoly" ? "image_avatar" : "image_mesh",
             mimeType,
+            role:
+              body.image_role === "front" || body.image_role === "side" || body.image_role === "back" || body.image_role === "detail"
+                ? body.image_role
+                : "front",
           },
           baseUrl,
         );

@@ -36,6 +36,13 @@ const FOCUS_OPTIONS: Array<{ value: StudioWorldFocus; label: string }> = [
   { value: "animation", label: "Animation" },
 ];
 
+const IMAGE_ROLE_OPTIONS: Array<NonNullable<StudioSourceImageRecord["role"]>> = [
+  "front",
+  "side",
+  "back",
+  "detail",
+];
+
 type ExportManifestResponse = {
   exportManifest?: unknown;
   error?: string;
@@ -235,6 +242,22 @@ export function StudioWorldScreen() {
         uploadInputRef.current.value = "";
       }
     }
+  };
+
+  const handleImageRoleChange = (
+    imageId: string,
+    role: NonNullable<StudioSourceImageRecord["role"]>,
+  ) => {
+    setUploadedImages((current) =>
+      current.map((image) =>
+        image.id === imageId
+          ? {
+              ...image,
+              role,
+            }
+          : image,
+      ),
+    );
   };
 
   const handleGenerate = async () => {
@@ -509,7 +532,7 @@ export function StudioWorldScreen() {
                   {uploadedImages.length > 0 ? (
                     <div className="mt-3 space-y-3">
                       <div className="grid gap-3 sm:grid-cols-3">
-                        {uploadedImages.map((image) => (
+                        {uploadedImages.map((image, index) => (
                           <div key={image.id} className="overflow-hidden rounded-xl border border-border/60 bg-black/10">
                             <Image
                               src={image.dataUrl}
@@ -524,6 +547,27 @@ export function StudioWorldScreen() {
                               <div className="mt-1 text-xs text-muted-foreground">
                                 {image.width} x {image.height} • {Math.round(image.sizeBytes / 1024)} KB
                               </div>
+                              <label className="mt-2 block">
+                                <span className="mb-1 block text-[11px] font-medium text-foreground">
+                                  View role
+                                </span>
+                                <select
+                                  className="ui-input w-full"
+                                  value={image.role ?? (index === 0 ? "front" : "side")}
+                                  onChange={(event) =>
+                                    handleImageRoleChange(
+                                      image.id,
+                                      event.target.value as NonNullable<StudioSourceImageRecord["role"]>,
+                                    )
+                                  }
+                                >
+                                  {IMAGE_ROLE_OPTIONS.map((role) => (
+                                    <option key={role} value={role}>
+                                      {role}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                             </div>
                           </div>
                         ))}

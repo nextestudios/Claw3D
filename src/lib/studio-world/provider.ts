@@ -170,7 +170,11 @@ export const createSelfHostedImageTo3dTask = async (params: {
   }
   const payload = {
     image_url: buildDataUri(primaryImage),
-    image_urls: params.sourceImages.slice(1).map(buildDataUri),
+    image_urls: params.sourceImages.slice(1).map((image) => ({
+      image_url: buildDataUri(image),
+      role: image.role ?? "detail",
+    })),
+    image_role: primaryImage.role ?? "front",
     model_type: params.mode === "image_mesh" ? "standard" : "lowpoly",
     ai_model: "latest",
     should_texture: true,

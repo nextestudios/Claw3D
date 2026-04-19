@@ -54,6 +54,7 @@ export type StudioSourceImageRecord = {
   dataUrl: string;
   palette: string[];
   intensitySamples?: number[];
+  role?: "front" | "side" | "back" | "detail";
 };
 
 export type StudioWorldAssetDraft = {
