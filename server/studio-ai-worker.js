@@ -385,6 +385,89 @@ const applyPortraitRelief = (intensityGrid) => {
   return smoothGrid(refined, 1);
 };
 
+const estimateNormalLikeField = (intensityGrid) => {
+  const rows = intensityGrid.length;
+  const cols = intensityGrid[0]?.length ?? 0;
+  return intensityGrid.map((row, rowIndex) =>
+    row.map((value, colIndex) => {
+      const left = intensityGrid[rowIndex]?.[Math.max(0, colIndex - 1)] ?? value;
+      const right = intensityGrid[rowIndex]?.[Math.min(cols - 1, colIndex + 1)] ?? value;
+      const up = intensityGrid[Math.max(0, rowIndex - 1)]?.[colIndex] ?? value;
+      const down = intensityGrid[Math.min(rows - 1, rowIndex + 1)]?.[colIndex] ?? value;
+      const nx = clamp((right - left) * 0.5 + 0.5, 0, 1);
+      const ny = clamp((down - up) * 0.5 + 0.5, 0, 1);
+      return { nx, ny, depth: value };
+    }),
+  );
+};
+
+const rotateGrid180 = (grid) =>
+  grid
+    .slice()
+    .reverse()
+    .map((row) => row.slice().reverse());
+
+const mirrorGridHorizontally = (grid) =>
+  grid.map((row) => row.slice().reverse());
+
+const generateSyntheticViewSet = (intensityGrid, colorGrid) => {
+  const front = {
+    role: "front",
+    intensityGrid,
+    colorGrid,
+    normalGrid: estimateNormalLikeField(intensityGrid),
+  };
+  const sideIntensity = smoothGrid(mirrorGridHorizontally(intensityGrid), 1);
+  const sideColor = mirrorGridHorizontally(colorGrid);
+  const side = {
+    role: "side",
+    intensityGrid: sideIntensity,
+    colorGrid: sideColor,
+    normalGrid: estimateNormalLikeField(sideIntensity),
+  };
+  const backIntensity = smoothGrid(rotateGrid180(intensityGrid), 1);
+  const backColor = rotateGrid180(colorGrid);
+  const back = {
+    role: "back",
+    intensityGrid: backIntensity,
+    colorGrid: backColor,
+    normalGrid: estimateNormalLikeField(backIntensity),
+  };
+  return [front, side, back];
+};
+
+const fuseSyntheticViewSet = (views) => {
+  const fusedIntensity = fuseIntensityViews(views);
+  const fusedColor = fuseColorViews(views);
+  const fusedNormal = views[0]?.normalGrid?.map((row, rowIndex) =>
+    row.map((_, colIndex) => {
+      let totalX = 0;
+      let totalY = 0;
+      let totalDepth = 0;
+      let weightTotal = 0;
+      for (const view of views) {
+        const sample = view?.normalGrid?.[rowIndex]?.[colIndex];
+        if (!sample) continue;
+        const weight = roleWeight(view.role);
+        totalX += sample.nx * weight;
+        totalY += sample.ny * weight;
+        totalDepth += sample.depth * weight;
+        weightTotal += weight;
+      }
+      return {
+        nx: weightTotal > 0 ? totalX / weightTotal : 0.5,
+        ny: weightTotal > 0 ? totalY / weightTotal : 0.5,
+        depth: weightTotal > 0 ? totalDepth / weightTotal : 0.5,
+      };
+    }),
+  ) ?? [];
+  return {
+    intensityGrid: fusedIntensity,
+    colorGrid: fusedColor,
+    normalGrid: fusedNormal,
+  };
+};
+
 const samplePalette = (params) => {
   const { raster, buffer } = params;
   const buckets = new Map();
@@ -748,15 +831,17 @@ const createPortraitVolumeAdapter = () => ({
     };
     const sampleParams = { raster, buffer: params.buffer };
     const palette = samplePalette(sampleParams);
-    const intensityGrid = Array.isArray(params.fusedIntensityGrid) && params.fusedIntensityGrid.length > 0
+    const baseIntensityGrid = Array.isArray(params.fusedIntensityGrid) && params.fusedIntensityGrid.length > 0
       ? params.fusedIntensityGrid
       : sampleIntensityGrid(sampleParams, 18);
-    const colorGrid = Array.isArray(params.fusedColorGrid) && params.fusedColorGrid.length > 0
+    const baseColorGrid = Array.isArray(params.fusedColorGrid) && params.fusedColorGrid.length > 0
       ? params.fusedColorGrid
       : sampleColorGrid(sampleParams, 18);
+    const syntheticViews = generateSyntheticViewSet(baseIntensityGrid, baseColorGrid);
+    const fusedViews = fuseSyntheticViewSet(syntheticViews);
     const glb = await createPortraitVolumeScene({
-      colorGrid,
-      intensityGrid,
+      colorGrid: fusedViews.colorGrid,
+      intensityGrid: fusedViews.intensityGrid,
       palette,
       width: size.width,
       height: size.height,
