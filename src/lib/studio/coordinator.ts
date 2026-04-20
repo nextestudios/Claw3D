@@ -5,6 +5,7 @@ import type {
   StudioFocusedPreference,
   StudioGatewaySettings,
   StudioGatewaySettingsPublic,
+  StudioGatewaySettingsPatch,
   StudioOfficePreferencePatch,
   StudioSettingsPublic,
   StudioSettingsPatch,
@@ -267,13 +268,83 @@ const mergeOfficeFloorsPatch = (
   return { ...current, ...next };
 };
 
+const mergeGatewayProfilesPatch = (
+  current: StudioGatewaySettingsPatch["profiles"],
+  next: StudioGatewaySettingsPatch["profiles"],
+): StudioGatewaySettingsPatch["profiles"] => {
+  if (next === undefined) return current;
+  if (next === null) return null;
+  if (!current || current === null) return { ...next };
+  const merged: NonNullable<StudioGatewaySettingsPatch["profiles"]> = {
+    ...current,
+  };
+  for (const [adapterType, profilePatch] of Object.entries(next)) {
+    if (profilePatch === null) {
+      merged[adapterType as keyof typeof merged] = null;
+      continue;
+    }
+    const existing = merged[adapterType as keyof typeof merged];
+    merged[adapterType as keyof typeof merged] =
+      existing && existing !== null
+        ? { ...existing, ...profilePatch }
+        : { ...profilePatch };
+  }
+  return merged;
+};
+
+const mergeGatewayConnectionPatch = (
+  current: StudioGatewaySettingsPatch["lastKnownGood"],
+  next: StudioGatewaySettingsPatch["lastKnownGood"],
+): StudioGatewaySettingsPatch["lastKnownGood"] => {
+  if (next === undefined) return current;
+  if (next === null) return null;
+  if (!current || current === null) return { ...next };
+  return { ...current, ...next };
+};
+
+const mergeGatewayPatch = (
+  current: StudioSettingsPatch["gateway"],
+  next: StudioSettingsPatch["gateway"],
+): StudioSettingsPatch["gateway"] => {
+  if (next === undefined) return current;
+  if (next === null) return null;
+  if (!current || current === null) {
+    return {
+      ...next,
+      ...(next.profiles !== undefined
+        ? { profiles: mergeGatewayProfilesPatch(undefined, next.profiles) }
+        : {}),
+      ...(next.lastKnownGood !== undefined
+        ? {
+            lastKnownGood: mergeGatewayConnectionPatch(
+              undefined,
+              next.lastKnownGood,
+            ),
+          }
+        : {}),
+    };
+  }
+
+  const profiles = mergeGatewayProfilesPatch(current.profiles, next.profiles);
+  const lastKnownGood = mergeGatewayConnectionPatch(
+    current.lastKnownGood,
+    next.lastKnownGood,
+  );
+  return {
+    ...current,
+    ...next,
+    ...(profiles !== undefined ? { profiles } : {}),
+    ...(lastKnownGood !== undefined ? { lastKnownGood } : {}),
+  };
+};
+
 const mergeStudioPatch = (
   current: StudioSettingsPatch | null,
   next: StudioSettingsPatch
 ): StudioSettingsPatch => {
   if (!current) {
     return {
-      ...(next.gateway !== undefined ? { gateway: next.gateway } : {}),
+      ...(next.gateway !== undefined ? { gateway: mergeGatewayPatch(undefined, next.gateway) } : {}),
       ...(next.activeFloorId !== undefined ? { activeFloorId: next.activeFloorId } : {}),
       ...(next.focused ? { focused: { ...next.focused } } : {}),
       ...(next.avatars ? { avatars: { ...next.avatars } } : {}),
@@ -297,11 +368,12 @@ const mergeStudioPatch = (
   const standup = mergeStandupPatch(current.standup, next.standup);
   const taskBoard = mergeTaskBoardPatch(current.taskBoard, next.taskBoard);
   const officeFloors = mergeOfficeFloorsPatch(current.officeFloors, next.officeFloors);
+  const gateway = mergeGatewayPatch(current.gateway, next.gateway);
   return {
     ...(next.gateway !== undefined
-      ? { gateway: next.gateway }
-      : current.gateway !== undefined
-        ? { gateway: current.gateway }
+      ? { gateway }
+      : gateway !== undefined
+        ? { gateway }
         : {}),
     ...(next.activeFloorId !== undefined
       ? { activeFloorId: next.activeFloorId }
