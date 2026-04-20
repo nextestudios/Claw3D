@@ -186,6 +186,8 @@ export function StudioWorldPreview({
   const remoteReady = Boolean(project?.externalModel?.glbUrl);
   const remoteGlbUrl = project?.externalModel?.glbUrl ?? null;
   const remoteThumbnailUrl = project?.externalModel?.thumbnailUrl ?? null;
+  const remoteDepthPreviewUrl = project?.externalModel?.depthPreviewUrl ?? null;
+  const remoteNormalPreviewUrl = project?.externalModel?.normalPreviewUrl ?? null;
   const previewLabel = isRemoteAiProject
     ? remoteReady
       ? "Remote AI result available"
@@ -277,6 +279,44 @@ export function StudioWorldPreview({
               Remote thumbnail returned by the AI provider.
             </div>
           </div>
+        </div>
+      ) : null}
+      {remoteDepthPreviewUrl || remoteNormalPreviewUrl ? (
+        <div className="pointer-events-none absolute bottom-4 left-1/2 grid w-[21rem] -translate-x-1/2 grid-cols-2 gap-3 rounded-2xl border border-white/15 bg-black/45 p-3 shadow-2xl backdrop-blur">
+          {remoteDepthPreviewUrl ? (
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
+              <Image
+                src={remoteDepthPreviewUrl}
+                alt="Remote AI depth preview"
+                width={160}
+                height={120}
+                className="h-24 w-full object-cover"
+                unoptimized
+              />
+              <div className="px-2 py-1.5">
+                <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-100/80">
+                  Depth
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {remoteNormalPreviewUrl ? (
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
+              <Image
+                src={remoteNormalPreviewUrl}
+                alt="Remote AI normal preview"
+                width={160}
+                height={120}
+                className="h-24 w-full object-cover"
+                unoptimized
+              />
+              <div className="px-2 py-1.5">
+                <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-100/80">
+                  Normal
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

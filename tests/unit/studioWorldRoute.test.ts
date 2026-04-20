@@ -315,7 +315,13 @@ describe("studio world route", () => {
         provider?: string;
         mode?: string;
         latestJob?: { status?: string; providerTaskId?: string | null };
-        externalModel?: { taskId?: string; status?: string };
+        externalModel?: {
+          taskId?: string;
+          status?: string;
+          adapterId?: string | null;
+          depthPreviewUrl?: string | null;
+          normalPreviewUrl?: string | null;
+        };
       };
       providerAvailability?: { provider?: string; available?: boolean };
     };
@@ -327,6 +333,9 @@ describe("studio world route", () => {
     expect(body.project?.latestJob?.providerTaskId).toBe("task_test_123");
     expect(body.project?.externalModel?.taskId).toBe("task_test_123");
     expect(body.project?.externalModel?.status).toBe("pending");
+    expect(body.project?.externalModel?.adapterId).toBe("portrait_volume");
+    expect(body.project?.externalModel?.depthPreviewUrl).toBeNull();
+    expect(body.project?.externalModel?.normalPreviewUrl).toBeNull();
     expect(body.providerAvailability?.provider).toBe("self_hosted");
     expect(body.providerAvailability?.available).toBe(true);
   });

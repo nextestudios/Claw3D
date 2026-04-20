@@ -134,6 +134,8 @@ export type StudioExternalModelRecord = {
   adapterId?: StudioWorkerAdapterKind | null;
   glbUrl?: string | null;
   thumbnailUrl?: string | null;
+  depthPreviewUrl?: string | null;
+  normalPreviewUrl?: string | null;
   textureUrls?: Array<Record<string, string>>;
   width?: number | null;
   height?: number | null;

@@ -164,9 +164,33 @@ const normalizeStore = (value: unknown): StudioProjectsStore => {
                   ? entry.externalModel.status
                   : "completed",
               progress: asNumber(entry.externalModel.progress, 0),
+              adapterId:
+                entry.externalModel.adapterId === "portrait_volume" ||
+                entry.externalModel.adapterId === "heightfield_relief"
+                  ? entry.externalModel.adapterId
+                  : null,
               glbUrl: asString(entry.externalModel.glbUrl, "").trim() || null,
               thumbnailUrl:
                 asString(entry.externalModel.thumbnailUrl, "").trim() || null,
+              depthPreviewUrl:
+                asString(entry.externalModel.depthPreviewUrl, "").trim() || null,
+              normalPreviewUrl:
+                asString(entry.externalModel.normalPreviewUrl, "").trim() || null,
+              width:
+                typeof entry.externalModel.width === "number" &&
+                Number.isFinite(entry.externalModel.width)
+                  ? entry.externalModel.width
+                  : null,
+              height:
+                typeof entry.externalModel.height === "number" &&
+                Number.isFinite(entry.externalModel.height)
+                  ? entry.externalModel.height
+                  : null,
+              palette: Array.isArray(entry.externalModel.palette)
+                ? entry.externalModel.palette.filter(
+                    (item): item is string => typeof item === "string",
+                  )
+                : [],
               textureUrls: Array.isArray(entry.externalModel.textureUrls)
                 ? entry.externalModel.textureUrls.filter((item): item is Record<string, string> =>
                     Boolean(item && typeof item === "object" && !Array.isArray(item)),
@@ -380,8 +404,14 @@ export const createStudioPendingProject = (params: {
       taskId: params.providerTaskId,
       status: "pending",
       progress: 0,
+      adapterId: params.input.adapterId ?? "portrait_volume",
       glbUrl: null,
       thumbnailUrl: null,
+      depthPreviewUrl: null,
+      normalPreviewUrl: null,
+      width: null,
+      height: null,
+      palette: [],
       textureUrls: [],
       errorMessage: null,
       usingTestMode: params.usingTestMode === true,

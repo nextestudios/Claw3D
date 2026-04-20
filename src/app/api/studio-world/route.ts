@@ -265,6 +265,8 @@ export async function GET(request: Request) {
         progress: task.progress,
         glbUrl: task.modelGlbUrl,
         thumbnailUrl: task.thumbnailUrl,
+        depthPreviewUrl: task.depthPreviewUrl,
+        normalPreviewUrl: task.normalPreviewUrl,
         textureUrls: [],
         adapterId: task.adapterId ?? null,
         width: task.width ?? null,

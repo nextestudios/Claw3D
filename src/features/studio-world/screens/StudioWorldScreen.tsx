@@ -59,6 +59,8 @@ type StudioWorldResponse = {
     progress: number;
     modelGlbUrl: string | null;
     thumbnailUrl: string | null;
+    depthPreviewUrl: string | null;
+    normalPreviewUrl: string | null;
     taskErrorMessage: string | null;
   };
   office?: {
@@ -285,7 +287,7 @@ export function StudioWorldScreen() {
             sourceImages: uploadedImages,
             imageMode,
             provider,
-            workerAdapter,
+            adapterId: workerAdapter,
           },
         }),
       });
@@ -899,6 +901,40 @@ export function StudioWorldScreen() {
                             className="h-32 w-full object-cover"
                             unoptimized
                           />
+                        </div>
+                      ) : null}
+                      {project.externalModel?.depthPreviewUrl || project.externalModel?.normalPreviewUrl ? (
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          {project.externalModel.depthPreviewUrl ? (
+                            <div className="overflow-hidden rounded-xl border border-border/60 bg-surface-1/35">
+                              <Image
+                                src={project.externalModel.depthPreviewUrl}
+                                alt={`${project.name} depth preview`}
+                                width={320}
+                                height={180}
+                                className="h-24 w-full object-cover"
+                                unoptimized
+                              />
+                              <div className="px-3 py-2 text-[11px] text-muted-foreground">
+                                Depth cue preview.
+                              </div>
+                            </div>
+                          ) : null}
+                          {project.externalModel.normalPreviewUrl ? (
+                            <div className="overflow-hidden rounded-xl border border-border/60 bg-surface-1/35">
+                              <Image
+                                src={project.externalModel.normalPreviewUrl}
+                                alt={`${project.name} normal preview`}
+                                width={320}
+                                height={180}
+                                className="h-24 w-full object-cover"
+                                unoptimized
+                              />
+                              <div className="px-3 py-2 text-[11px] text-muted-foreground">
+                                Normal cue preview.
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                       {project.sourceImages[0] ? (

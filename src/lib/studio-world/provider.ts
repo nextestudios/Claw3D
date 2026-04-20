@@ -23,6 +23,8 @@ export type StudioAiTaskRecord = {
   adapterId: "portrait_volume" | "heightfield_relief" | null;
   modelGlbUrl: string | null;
   thumbnailUrl: string | null;
+  depthPreviewUrl: string | null;
+  normalPreviewUrl: string | null;
   width: number | null;
   height: number | null;
   palette: string[];
@@ -44,6 +46,8 @@ type SelfHostedTaskResponse = {
   height?: number;
   palette?: string[];
   thumbnail_url?: string;
+  depth_preview_url?: string;
+  normal_preview_url?: string;
   model_urls?: {
     glb?: string;
   };
@@ -260,6 +264,8 @@ export const getSelfHostedImageTo3dTask = async (
         : null,
     modelGlbUrl: body.model_urls?.glb ?? null,
     thumbnailUrl: body.thumbnail_url ?? null,
+    depthPreviewUrl: body.depth_preview_url ?? null,
+    normalPreviewUrl: body.normal_preview_url ?? null,
     width:
       typeof body.width === "number" && Number.isFinite(body.width)
         ? body.width

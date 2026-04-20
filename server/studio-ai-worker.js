@@ -11,6 +11,7 @@ const DEFAULT_PORT = Number.parseInt(process.env.CLAW3D_STUDIO_PROVIDER_PORT || 
 const DEFAULT_HOST = process.env.CLAW3D_STUDIO_PROVIDER_HOST || "127.0.0.1";
 const TASK_TIMEOUT_MS = 1_200;
 const TASK_METADATA_FILENAME = "task.json";
+const PREVIEW_ARTIFACT_SCALE = 12;
 
 const respondJson = (res, statusCode, body) => {
   res.writeHead(statusCode, {
@@ -31,6 +32,26 @@ const respondFile = (res, statusCode, filePath, contentType) => {
   });
   fs.createReadStream(filePath).pipe(res);
 };
+
+const writePng = (filePath, width, height, fillPixel) =>
+  new Promise((resolve, reject) => {
+    const png = new PNG({ width, height });
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const idx = (width * y + x) << 2;
+        const [red, green, blue, alpha] = fillPixel(x, y);
+        png.data[idx] = red;
+        png.data[idx + 1] = green;
+        png.data[idx + 2] = blue;
+        png.data[idx + 3] = alpha;
+      }
+    }
+    png
+      .pack()
+      .pipe(fs.createWriteStream(filePath))
+      .on("finish", resolve)
+      .on("error", reject);
+  });
 
 const readRequestBody = (req) =>
   new Promise((resolve, reject) => {
@@ -71,6 +92,8 @@ const writeTaskMetadata = (taskDir, task) => {
     finishedAt: task.finishedAt,
     modelPath: task.modelPath ? path.basename(task.modelPath) : null,
     thumbnailPath: task.thumbnailPath ? path.basename(task.thumbnailPath) : null,
+    depthPreviewPath: task.depthPreviewPath ? path.basename(task.depthPreviewPath) : null,
+    normalPreviewPath: task.normalPreviewPath ? path.basename(task.normalPreviewPath) : null,
     errorMessage: task.errorMessage,
     sourceImagePath: task.sourceImagePath ? path.basename(task.sourceImagePath) : null,
     additionalImages: Array.isArray(task.additionalImages)
@@ -98,7 +121,10 @@ const loadTaskMetadata = (rootDir, taskId) => {
   const revivePath = (fileName) => (typeof fileName === "string" && fileName ? path.join(taskDir, fileName) : null);
   const task = {
     id: typeof raw.id === "string" ? raw.id : taskId,
-    adapterId: typeof raw.adapterId === "string" && raw.adapterId ? raw.adapterId : "heightfield-relief",
+    adapterId:
+      typeof raw.adapterId === "string" && raw.adapterId
+        ? raw.adapterId
+        : "heightfield_relief",
     status:
       raw.status === "PENDING" ||
       raw.status === "IN_PROGRESS" ||
@@ -113,6 +139,8 @@ const loadTaskMetadata = (rootDir, taskId) => {
     finishedAt: Number.isFinite(raw.finishedAt) ? raw.finishedAt : 0,
     modelPath: revivePath(raw.modelPath),
     thumbnailPath: revivePath(raw.thumbnailPath),
+    depthPreviewPath: revivePath(raw.depthPreviewPath),
+    normalPreviewPath: revivePath(raw.normalPreviewPath),
     errorMessage: typeof raw.errorMessage === "string" ? raw.errorMessage : "",
     sourceImagePath: revivePath(raw.sourceImagePath),
     additionalImages: Array.isArray(raw.additionalImages) ? raw.additionalImages : [],
@@ -139,6 +167,23 @@ const hex = (value) => value.toString(16).padStart(2, "0");
 const rgbToHex = (red, green, blue) => `#${hex(red)}${hex(green)}${hex(blue)}`;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const normalizeAdapterId = (adapterId) => {
+  if (adapterId === "heightfield-relief" || adapterId === "heightfield_relief") {
+    return "heightfield_relief";
+  }
+  if (adapterId === "portrait-volume" || adapterId === "portrait_volume") {
+    return "portrait_volume";
+  }
+  return "portrait_volume";
+};
+
+const normalizeImageRole = (role) => {
+  if (role === "front" || role === "side" || role === "back" || role === "detail") {
+    return role;
+  }
+  return "detail";
+};
 
 const smoothstep = (edge0, edge1, value) => {
   const t = clamp((value - edge0) / Math.max(edge1 - edge0, 1e-6), 0, 1);
@@ -399,6 +444,43 @@ const estimateNormalLikeField = (intensityGrid) => {
       return { nx, ny, depth: value };
     }),
   );
+};
+
+const writeDepthPreview = async (filePath, intensityGrid) => {
+  const rows = intensityGrid.length;
+  const cols = intensityGrid[0]?.length ?? 0;
+  if (rows === 0 || cols === 0) {
+    return;
+  }
+  const width = cols * PREVIEW_ARTIFACT_SCALE;
+  const height = rows * PREVIEW_ARTIFACT_SCALE;
+  await writePng(filePath, width, height, (x, y) => {
+    const row = Math.min(rows - 1, Math.floor(y / PREVIEW_ARTIFACT_SCALE));
+    const col = Math.min(cols - 1, Math.floor(x / PREVIEW_ARTIFACT_SCALE));
+    const value = Math.round(clamp(intensityGrid[row]?.[col] ?? 0.5, 0, 1) * 255);
+    return [value, value, value, 255];
+  });
+};
+
+const writeNormalPreview = async (filePath, normalGrid) => {
+  const rows = normalGrid.length;
+  const cols = normalGrid[0]?.length ?? 0;
+  if (rows === 0 || cols === 0) {
+    return;
+  }
+  const width = cols * PREVIEW_ARTIFACT_SCALE;
+  const height = rows * PREVIEW_ARTIFACT_SCALE;
+  await writePng(filePath, width, height, (x, y) => {
+    const row = Math.min(rows - 1, Math.floor(y / PREVIEW_ARTIFACT_SCALE));
+    const col = Math.min(cols - 1, Math.floor(x / PREVIEW_ARTIFACT_SCALE));
+    const sample = normalGrid[row]?.[col] ?? { nx: 0.5, ny: 0.5, depth: 0.5 };
+    return [
+      Math.round(clamp(sample.nx, 0, 1) * 255),
+      Math.round(clamp(sample.ny, 0, 1) * 255),
+      Math.round(clamp(sample.depth * 0.65 + 0.35, 0, 1) * 255),
+      255,
+    ];
+  });
 };
 
 const rotateGrid180 = (grid) =>
@@ -673,7 +755,7 @@ const createHeightfieldScene = async (params) => {
 };
 
 const createHeightfieldAdapter = () => ({
-  id: "heightfield-relief",
+  id: "heightfield_relief",
   async generate(params) {
     const raster = decodeRasterImage(params.buffer, params.mimeType);
     const size = {
@@ -688,6 +770,7 @@ const createHeightfieldAdapter = () => ({
     const colorGrid = Array.isArray(params.fusedColorGrid) && params.fusedColorGrid.length > 0
       ? params.fusedColorGrid
       : sampleColorGrid(sampleParams, 24);
+    const previewDepthGrid = applyPortraitRelief(intensityGrid);
     const glb = await createHeightfieldScene({
       colorGrid,
       intensityGrid,
@@ -699,6 +782,8 @@ const createHeightfieldAdapter = () => ({
       palette,
       size,
       glb,
+      depthGrid: previewDepthGrid,
+      normalGrid: estimateNormalLikeField(previewDepthGrid),
       thumbnailSourcePath: params.sourceImagePath,
     };
   },
@@ -822,7 +907,7 @@ const createPortraitVolumeScene = async (params) => {
 };
 
 const createPortraitVolumeAdapter = () => ({
-  id: "portrait-volume",
+  id: "portrait_volume",
   async generate(params) {
     const raster = decodeRasterImage(params.buffer, params.mimeType);
     const size = {
@@ -850,6 +935,8 @@ const createPortraitVolumeAdapter = () => ({
       palette,
       size,
       glb,
+      depthGrid: fusedViews.intensityGrid,
+      normalGrid: fusedViews.normalGrid,
       thumbnailSourcePath: params.sourceImagePath,
     };
   },
@@ -863,7 +950,14 @@ const createAdapterRegistry = () => {
   adapters.set(portraitVolumeAdapter.id, portraitVolumeAdapter);
   return {
     getAdapter(adapterId) {
-      return adapters.get(adapterId) || portraitVolumeAdapter;
+      return adapters.get(normalizeAdapterId(adapterId)) || portraitVolumeAdapter;
+    },
+    listAdapters() {
+      return Array.from(adapters.values()).map((adapter) => ({
+        id: adapter.id,
+        label:
+          adapter.id === "portrait_volume" ? "Portrait volume" : "Heightfield relief",
+      }));
     },
     defaultAdapterId: portraitVolumeAdapter.id,
   };
@@ -988,7 +1082,16 @@ const createTaskStore = () => {
     thumbnail_url: task.thumbnailPath
       ? `${baseUrl}/openapi/v1/image-to-3d/${task.id}/output/thumbnail.png`
       : "",
+    depth_preview_url: task.depthPreviewPath
+      ? `${baseUrl}/openapi/v1/image-to-3d/${task.id}/output/depth.png`
+      : "",
+    normal_preview_url: task.normalPreviewPath
+      ? `${baseUrl}/openapi/v1/image-to-3d/${task.id}/output/normal.png`
+      : "",
     progress: task.progress,
+    width: task.size?.width ?? null,
+    height: task.size?.height ?? null,
+    palette: Array.isArray(task.palette) ? task.palette : [],
     created_at: task.createdAt,
     started_at: task.startedAt,
     finished_at: task.finishedAt,
@@ -1004,7 +1107,7 @@ const createTaskStore = () => {
     const taskDir = getTaskDir(taskId);
     const sourceImagePath = path.join(taskDir, "source.png");
     fs.writeFileSync(sourceImagePath, params.buffer);
-    const adapterId = params.adapterId || adapterRegistry.defaultAdapterId;
+    const adapterId = normalizeAdapterId(params.adapterId || adapterRegistry.defaultAdapterId);
     const adapter = adapterRegistry.getAdapter(adapterId);
 
     const task = {
@@ -1017,8 +1120,11 @@ const createTaskStore = () => {
       finishedAt: 0,
       modelPath: null,
       thumbnailPath: sourceImagePath,
+      depthPreviewPath: null,
+      normalPreviewPath: null,
       errorMessage: "",
       sourceImagePath,
+      additionalImages: Array.isArray(params.additionalImages) ? params.additionalImages : [],
       palette: [],
       size: { width: 1024, height: 1024 },
     };
@@ -1070,7 +1176,17 @@ const createTaskStore = () => {
           fusedColorGrid: fuseColorViews(viewSamples),
         });
         const modelPath = path.join(taskDir, "model.glb");
+        const depthPreviewPath = path.join(taskDir, "depth.png");
+        const normalPreviewPath = path.join(taskDir, "normal.png");
         fs.writeFileSync(modelPath, result.glb);
+        if (Array.isArray(result.depthGrid) && result.depthGrid.length > 0) {
+          await writeDepthPreview(depthPreviewPath, result.depthGrid);
+          task.depthPreviewPath = depthPreviewPath;
+        }
+        if (Array.isArray(result.normalGrid) && result.normalGrid.length > 0) {
+          await writeNormalPreview(normalPreviewPath, result.normalGrid);
+          task.normalPreviewPath = normalPreviewPath;
+        }
         task.modelPath = modelPath;
         task.thumbnailPath = result.thumbnailSourcePath || sourceImagePath;
         task.palette = result.palette || [];
@@ -1114,6 +1230,8 @@ const createTaskStore = () => {
       if (!task) return null;
       if (kind === "thumbnail") return task.thumbnailPath;
       if (kind === "model") return task.modelPath;
+      if (kind === "depth") return task.depthPreviewPath;
+      if (kind === "normal") return task.normalPreviewPath;
       return null;
     },
   };
@@ -1163,9 +1281,25 @@ const createStudioAiWorkerServer = (params = {}) => {
         const { buffer, mimeType } = await decodeImageUrl(body.image_url);
         const additionalImages = [];
         if (Array.isArray(body.image_urls)) {
-          for (const imageUrl of body.image_urls) {
-            if (typeof imageUrl !== "string" || !imageUrl.trim()) continue;
-            additionalImages.push(await decodeImageUrl(imageUrl));
+          for (const imageEntry of body.image_urls) {
+            if (typeof imageEntry === "string") {
+              if (!imageEntry.trim()) continue;
+              const decoded = await decodeImageUrl(imageEntry);
+              additionalImages.push({
+                ...decoded,
+                role: "detail",
+              });
+              continue;
+            }
+            if (!imageEntry || typeof imageEntry !== "object") continue;
+            const imageUrl =
+              typeof imageEntry.image_url === "string" ? imageEntry.image_url.trim() : "";
+            if (!imageUrl) continue;
+            const decoded = await decodeImageUrl(imageUrl);
+            additionalImages.push({
+              ...decoded,
+              role: normalizeImageRole(imageEntry.role),
+            });
           }
         }
         const created = await taskStore.createTask(
@@ -1183,10 +1317,7 @@ const createStudioAiWorkerServer = (params = {}) => {
             mode:
               body.model_type === "lowpoly" ? "image_avatar" : "image_mesh",
             mimeType,
-            role:
-              body.image_role === "front" || body.image_role === "side" || body.image_role === "back" || body.image_role === "detail"
-                ? body.image_role
-                : "front",
+            role: normalizeImageRole(body.image_role || "front"),
           },
           baseUrl,
         );
@@ -1221,6 +1352,28 @@ const createStudioAiWorkerServer = (params = {}) => {
         const filePath = taskStore.getTaskFile(thumbnailMatch[1], "thumbnail");
         if (!filePath || !fs.existsSync(filePath)) {
           respondJson(res, 404, { error: "Thumbnail not ready." });
+          return;
+        }
+        respondFile(res, 200, filePath, "image/png");
+        return;
+      }
+
+      const depthMatch = pathname.match(/^\/openapi\/v1\/image-to-3d\/([^/]+)\/output\/depth\.png$/);
+      if (req.method === "GET" && depthMatch) {
+        const filePath = taskStore.getTaskFile(depthMatch[1], "depth");
+        if (!filePath || !fs.existsSync(filePath)) {
+          respondJson(res, 404, { error: "Depth preview not ready." });
+          return;
+        }
+        respondFile(res, 200, filePath, "image/png");
+        return;
+      }
+
+      const normalMatch = pathname.match(/^\/openapi\/v1\/image-to-3d\/([^/]+)\/output\/normal\.png$/);
+      if (req.method === "GET" && normalMatch) {
+        const filePath = taskStore.getTaskFile(normalMatch[1], "normal");
+        if (!filePath || !fs.existsSync(filePath)) {
+          respondJson(res, 404, { error: "Normal preview not ready." });
           return;
         }
         respondFile(res, 200, filePath, "image/png");

@@ -64,6 +64,12 @@ describe("studio AI worker contract", () => {
         status?: string;
         model_urls?: { glb?: string };
         thumbnail_url?: string;
+        depth_preview_url?: string;
+        normal_preview_url?: string;
+        adapter_id?: string;
+        width?: number;
+        height?: number;
+        palette?: string[];
       } = {};
       for (let attempt = 0; attempt < 6; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 300));
@@ -74,12 +80,26 @@ describe("studio AI worker contract", () => {
       }
 
       expect(taskBody.status).toBe("SUCCEEDED");
+      expect(taskBody.adapter_id).toBe("portrait_volume");
       expect(taskBody.thumbnail_url).toMatch(/thumbnail\.png$/);
+      expect(taskBody.depth_preview_url).toMatch(/depth\.png$/);
+      expect(taskBody.normal_preview_url).toMatch(/normal\.png$/);
       expect(taskBody.model_urls?.glb).toMatch(/model\.glb$/);
+      expect(taskBody.width).toBeGreaterThan(0);
+      expect(taskBody.height).toBeGreaterThan(0);
+      expect((taskBody.palette ?? []).length).toBeGreaterThan(0);
 
       const thumbnailResponse = await fetch(taskBody.thumbnail_url!);
       expect(thumbnailResponse.status).toBe(200);
       expect(thumbnailResponse.headers.get("content-type")).toBe("image/png");
+
+      const depthResponse = await fetch(taskBody.depth_preview_url!);
+      expect(depthResponse.status).toBe(200);
+      expect(depthResponse.headers.get("content-type")).toBe("image/png");
+
+      const normalResponse = await fetch(taskBody.normal_preview_url!);
+      expect(normalResponse.status).toBe(200);
+      expect(normalResponse.headers.get("content-type")).toBe("image/png");
 
       const modelResponse = await fetch(taskBody.model_urls!.glb!);
       expect(modelResponse.status).toBe(200);
