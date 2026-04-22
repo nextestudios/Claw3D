@@ -13,7 +13,11 @@ import type {
   StudioWorldAssetDraft,
   StudioWorldDraft,
 } from "@/lib/studio-world/types";
-import { buildAssetGeometry, buildAssetMaterial, buildGlowMaterial } from "@/features/studio-world/preview/scene-utils";
+import {
+  buildAssetGeometry,
+  buildAssetMaterial,
+  buildGlowMaterial,
+} from "@/features/studio-world/preview/scene-utils";
 
 type AssetMeshProps = {
   asset: StudioWorldAssetDraft;
@@ -36,7 +40,11 @@ const AssetMesh = ({ asset }: AssetMeshProps) => {
     const elapsed = clock.elapsedTime;
     const [x, y, z] = asset.position;
     if (asset.animation === "bob") {
-      groupRef.current.position.set(x, y + Math.sin(elapsed * 1.8 + x) * 0.22, z);
+      groupRef.current.position.set(
+        x,
+        y + Math.sin(elapsed * 1.8 + x) * 0.22,
+        z,
+      );
     } else if (asset.animation === "pulse") {
       const scale = 1 + Math.sin(elapsed * 2.4 + z) * 0.06;
       groupRef.current.position.set(x, y, z);
@@ -57,7 +65,9 @@ const AssetMesh = ({ asset }: AssetMeshProps) => {
           position={[0, Math.max(asset.scale[1] * 0.6, 0.8), 0]}
           material={glowMaterial}
         >
-          <sphereGeometry args={[Math.max(asset.scale[0] * 0.28, 0.35), 18, 18]} />
+          <sphereGeometry
+            args={[Math.max(asset.scale[0] * 0.28, 0.35), 18, 18]}
+          />
         </mesh>
       ) : null}
     </group>
@@ -79,14 +89,28 @@ const SceneContents = ({ sceneDraft }: { sceneDraft: StudioWorldDraft }) => {
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
       />
-      <directionalLight position={[-12, 10, -6]} intensity={0.45} color={sceneDraft.palette.glow} />
+      <directionalLight
+        position={[-12, 10, -6]}
+        intensity={0.45}
+        color={sceneDraft.palette.glow}
+      />
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[sceneDraft.worldBounds.width * 2.2, sceneDraft.worldBounds.depth * 2.2]} />
-        <meshStandardMaterial color={sceneDraft.palette.ground} roughness={0.95} metalness={0.02} />
+        <planeGeometry
+          args={[
+            sceneDraft.worldBounds.width * 2.2,
+            sceneDraft.worldBounds.depth * 2.2,
+          ]}
+        />
+        <meshStandardMaterial
+          color={sceneDraft.palette.ground}
+          roughness={0.95}
+          metalness={0.02}
+        />
       </mesh>
       <gridHelper
         args={[
-          Math.max(sceneDraft.worldBounds.width, sceneDraft.worldBounds.depth) * 2,
+          Math.max(sceneDraft.worldBounds.width, sceneDraft.worldBounds.depth) *
+            2,
           24,
           new THREE.Color(sceneDraft.palette.glow),
           new THREE.Color(sceneDraft.palette.structure),
@@ -148,10 +172,18 @@ const RemoteGlbContents = ({ glbUrl }: { glbUrl: string }) => {
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
       />
-      <directionalLight position={[-12, 10, -6]} intensity={0.4} color="#8bd6ff" />
+      <directionalLight
+        position={[-12, 10, -6]}
+        intensity={0.4}
+        color="#8bd6ff"
+      />
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[24, 24]} />
-        <meshStandardMaterial color="#121a22" roughness={0.96} metalness={0.01} />
+        <meshStandardMaterial
+          color="#121a22"
+          roughness={0.96}
+          metalness={0.01}
+        />
       </mesh>
       <gridHelper
         args={[24, 24, new THREE.Color("#3b82f6"), new THREE.Color("#334155")]}
@@ -174,7 +206,10 @@ const RemoteGlbContents = ({ glbUrl }: { glbUrl: string }) => {
 type StudioWorldPreviewProps = {
   sceneDraft: StudioWorldDraft;
   referenceImage?: StudioSourceImageRecord | null;
-  project?: Pick<StudioProjectRecord, "mode" | "provider" | "externalModel"> | null;
+  project?: Pick<
+    StudioProjectRecord,
+    "mode" | "provider" | "externalModel"
+  > | null;
 };
 
 export function StudioWorldPreview({
@@ -183,25 +218,49 @@ export function StudioWorldPreview({
   project = null,
 }: StudioWorldPreviewProps) {
   const isRemoteAiProject = project?.provider === "self_hosted";
+  const remoteStatus = project?.externalModel?.status ?? null;
   const remoteReady = Boolean(project?.externalModel?.glbUrl);
   const remoteGlbUrl = project?.externalModel?.glbUrl ?? null;
   const remoteThumbnailUrl = project?.externalModel?.thumbnailUrl ?? null;
-  const remoteDepthPreviewUrl = project?.externalModel?.depthPreviewUrl ?? null;
-  const remoteNormalPreviewUrl = project?.externalModel?.normalPreviewUrl ?? null;
-  const previewLabel = isRemoteAiProject
-    ? remoteReady
-      ? "Remote AI result available"
-      : "Remote AI task in progress"
-    : "Local Studio preview";
-  const previewSubLabel = isRemoteAiProject
-    ? remoteReady
-      ? "Showing local fallback scene while provider GLB and thumbnail are ready."
-      : "Showing local fallback scene until the provider finishes."
-    : project?.mode === "image_avatar"
-      ? "Image-guided avatar proxy."
-      : project?.mode === "image_mesh"
-        ? "Image-guided mesh draft."
-        : "Local world draft.";
+  const remoteProgress = Math.max(
+    0,
+    Math.min(100, remoteReady ? 100 : (project?.externalModel?.progress ?? 0)),
+  );
+  const remoteStatusLabel =
+    remoteStatus === "completed" && !remoteReady
+      ? "Syncing"
+      : remoteStatus === "completed"
+        ? "Complete"
+        : remoteStatus === "failed"
+          ? "Failed"
+          : remoteStatus === "in_progress"
+            ? "Generating"
+            : remoteStatus === "pending"
+              ? "Queued"
+              : "Idle";
+  const remoteProgressTone =
+    remoteStatus === "failed"
+      ? "bg-red-400/90"
+      : remoteReady
+        ? "bg-emerald-400/90"
+        : "bg-cyan-300/90";
+  const remoteBackendBadge = !isRemoteAiProject
+    ? null
+    : project?.externalModel?.usingTestMode === true
+      ? {
+          label: "Mock",
+          className: "border-amber-400/30 bg-amber-500/15 text-amber-100",
+        }
+      : project?.externalModel?.usingTestMode === false
+        ? {
+            label: "Real upstream",
+            className:
+              "border-emerald-400/30 bg-emerald-500/15 text-emerald-100",
+          }
+        : {
+            label: "Checking backend",
+            className: "border-white/15 bg-black/35 text-white/75",
+          };
   return (
     <div className="relative h-full min-h-[360px] w-full overflow-hidden rounded-2xl border border-border/60 bg-black/70">
       <Canvas
@@ -219,23 +278,34 @@ export function StudioWorldPreview({
           <SceneContents sceneDraft={sceneDraft} />
         )}
       </Canvas>
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/55 to-transparent px-4 py-3">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-100/80">
-            Claw3D Studio Preview
-          </p>
-          <p className="mt-1 text-sm text-white/90">{sceneDraft.promptSummary}</p>
-          <p className="mt-1 text-[11px] text-white/65">{previewLabel}</p>
-        </div>
+      <div className="pointer-events-none absolute right-4 top-4 flex items-center gap-2">
+        {remoteBackendBadge ? (
+          <div
+            className={`rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] ${remoteBackendBadge.className}`}
+          >
+            {remoteBackendBadge.label}
+          </div>
+        ) : null}
         <div className="rounded-full border border-white/15 bg-black/35 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-white/75">
           {sceneDraft.assets.length} assets
         </div>
       </div>
-      <div className="pointer-events-none absolute inset-x-0 top-16 px-4">
-        <div className="inline-flex rounded-full border border-white/10 bg-black/35 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-white/70">
-          {previewSubLabel}
+      {isRemoteAiProject ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-black/45 px-3 py-2 shadow-2xl backdrop-blur">
+            <div className="flex items-center justify-between gap-3 font-mono text-[10px] uppercase tracking-[0.16em] text-white/75">
+              <span>{remoteStatusLabel}</span>
+              <span>{remoteProgress}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ease-out ${remoteProgressTone}`}
+                style={{ width: `${remoteProgress}%` }}
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      ) : null}
       {referenceImage ? (
         <div className="pointer-events-none absolute bottom-4 left-4 w-36 overflow-hidden rounded-2xl border border-white/15 bg-black/45 shadow-2xl backdrop-blur">
           <Image
@@ -250,7 +320,9 @@ export function StudioWorldPreview({
             <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-100/80">
               Reference
             </div>
-            <div className="mt-1 truncate text-xs text-white/85">{referenceImage.fileName}</div>
+            <div className="mt-1 truncate text-xs text-white/85">
+              {referenceImage.fileName}
+            </div>
             <div className="mt-1 text-[11px] text-white/60">
               {project?.mode === "image_avatar"
                 ? "Image-guided avatar proxy."
@@ -279,44 +351,6 @@ export function StudioWorldPreview({
               Remote thumbnail returned by the AI provider.
             </div>
           </div>
-        </div>
-      ) : null}
-      {remoteDepthPreviewUrl || remoteNormalPreviewUrl ? (
-        <div className="pointer-events-none absolute bottom-4 left-1/2 grid w-[21rem] -translate-x-1/2 grid-cols-2 gap-3 rounded-2xl border border-white/15 bg-black/45 p-3 shadow-2xl backdrop-blur">
-          {remoteDepthPreviewUrl ? (
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
-              <Image
-                src={remoteDepthPreviewUrl}
-                alt="Remote AI depth preview"
-                width={160}
-                height={120}
-                className="h-24 w-full object-cover"
-                unoptimized
-              />
-              <div className="px-2 py-1.5">
-                <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-100/80">
-                  Depth
-                </div>
-              </div>
-            </div>
-          ) : null}
-          {remoteNormalPreviewUrl ? (
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/35">
-              <Image
-                src={remoteNormalPreviewUrl}
-                alt="Remote AI normal preview"
-                width={160}
-                height={120}
-                className="h-24 w-full object-cover"
-                unoptimized
-              />
-              <div className="px-2 py-1.5">
-                <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan-100/80">
-                  Normal
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>

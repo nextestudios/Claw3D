@@ -7,6 +7,8 @@
     "dev": "node server/index.js --dev",
     "dev:https": "node server/index.js --dev --https",
     "studio-ai-worker": "node server/studio-ai-worker.js",
+    "studio-ai-upstream-setup": "node scripts/studio-ai-upstream-setup.mjs",
+    "studio-ai-upstream-local": "node server/studio-ai-upstream-local.js",
     "hermes-adapter": "node server/hermes-gateway-adapter.js",
     "demo-gateway": "node server/demo-gateway-adapter.js",
     "build": "next build",
@@ -16,6 +18,7 @@
     "sync:gateway-client": "node scripts/sync-openclaw-gateway-client.ts",
     "studio:setup": "node scripts/studio-setup.js",
     "smoke:dev-server": "node scripts/smoke-dev-server.mjs",
+    "smoke:remote-upstream": "node scripts/studio-ai-remote-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "e2e": "playwright test"

@@ -29,6 +29,7 @@ export type StudioAiTaskRecord = {
   height: number | null;
   palette: string[];
   taskErrorMessage: string | null;
+  usingTestMode?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -54,6 +55,11 @@ type SelfHostedTaskResponse = {
   task_error?: {
     message?: string;
   };
+  using_test_mode?: boolean;
+};
+
+type SelfHostedTaskDebugLogResponse = {
+  log?: string;
 };
 
 const SELF_HOSTED_API_BASE_URL = "http://127.0.0.1:3333/openapi/v1";
@@ -278,9 +284,36 @@ export const getSelfHostedImageTo3dTask = async (
       ? body.palette.filter((entry): entry is string => typeof entry === "string")
       : [],
     taskErrorMessage: body.task_error?.message?.trim() || null,
+    usingTestMode:
+      typeof body.using_test_mode === "boolean" ? body.using_test_mode : undefined,
     createdAt: now,
     updatedAt: now,
   };
+};
+
+export const getSelfHostedImageTo3dTaskDebugLog = async (taskId: string): Promise<string> => {
+  const { baseUrl, apiKey } = resolveSelfHostedProviderConfig();
+  const response = await fetch(`${baseUrl}/image-to-3d/${encodeURIComponent(taskId)}/debug-log`, {
+    headers: {
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
+    cache: "no-store",
+  });
+  if (response.status === 404) {
+    return "";
+  }
+  const rawBody = await response.text();
+  let body: SelfHostedTaskDebugLogResponse = {};
+  try {
+    body = JSON.parse(rawBody) as SelfHostedTaskDebugLogResponse;
+  } catch {
+    body = {};
+  }
+  if (!response.ok) {
+    const diagnostic = rawBody.trim() || `${response.status} ${response.statusText}`;
+    throw new Error(`Failed to fetch self-hosted provider task log. ${diagnostic}`);
+  }
+  return typeof body.log === "string" ? body.log : "";
 };
 
 export const waitForSelfHostedImageTo3dTask = async (params: {

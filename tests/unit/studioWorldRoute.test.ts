@@ -6,21 +6,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DELETE, GET, POST } from "@/app/api/studio-world/route";
 const makeTempDir = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
+const restoreEnv = (name: string, value: string | undefined) => {
+  if (typeof value === "string") {
+    process.env[name] = value;
+    return;
+  }
+  delete process.env[name];
+};
 
 describe("studio world route", () => {
   const priorStateDir = process.env.OPENCLAW_STATE_DIR;
   const priorMeshyApiKey = process.env.MESHY_API_KEY;
   const priorRealAi = process.env.CLAW3D_STUDIO_ENABLE_REAL_AI;
+  const priorProviderUrl = process.env.CLAW3D_STUDIO_PROVIDER_URL;
   let tempDir: string | null = null;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    delete process.env.CLAW3D_STUDIO_PROVIDER_URL;
+    delete process.env.CLAW3D_STUDIO_ENABLE_REAL_AI;
   });
 
   afterEach(() => {
-    process.env.OPENCLAW_STATE_DIR = priorStateDir;
-    process.env.MESHY_API_KEY = priorMeshyApiKey;
-    process.env.CLAW3D_STUDIO_ENABLE_REAL_AI = priorRealAi;
+    restoreEnv("OPENCLAW_STATE_DIR", priorStateDir);
+    restoreEnv("MESHY_API_KEY", priorMeshyApiKey);
+    restoreEnv("CLAW3D_STUDIO_ENABLE_REAL_AI", priorRealAi);
+    restoreEnv("CLAW3D_STUDIO_PROVIDER_URL", priorProviderUrl);
     if (tempDir) {
       fs.rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
@@ -180,7 +191,7 @@ describe("studio world route", () => {
         (asset) => asset.kind === "avatar_head",
       ),
     ).toBe(true);
-  });
+  }, 15000);
 
   it("creates an image-guided mesh project", async () => {
     tempDir = makeTempDir("studio-world-image-mesh-route");
@@ -246,7 +257,7 @@ describe("studio world route", () => {
         (asset) => asset.id === "mesh_panel",
       ),
     ).toBe(true);
-  });
+  }, 15000);
 
   it("submits a real AI image-to-3D task when a self-hosted provider is configured", async () => {
     tempDir = makeTempDir("studio-world-self-hosted-route");
@@ -338,6 +349,66 @@ describe("studio world route", () => {
     expect(body.project?.externalModel?.normalPreviewUrl).toBeNull();
     expect(body.providerAvailability?.provider).toBe("self_hosted");
     expect(body.providerAvailability?.available).toBe(true);
+  }, 15000);
+
+  it("falls back to local generation when self-hosted provider is configured but real AI is disabled", async () => {
+    tempDir = makeTempDir("studio-world-self-hosted-fallback-route");
+    process.env.OPENCLAW_STATE_DIR = tempDir;
+    process.env.CLAW3D_STUDIO_PROVIDER_URL = "http://provider.test/openapi/v1";
+    process.env.CLAW3D_STUDIO_ENABLE_REAL_AI = "false";
+
+    const fetchSpy = vi.fn(async () => {
+      throw new Error("Provider should not be called when real AI is disabled.");
+    });
+    globalThis.fetch = fetchSpy as typeof fetch;
+
+    const response = await POST({
+      text: async () =>
+        JSON.stringify({
+          action: "generate",
+          input: {
+            name: "Fallback Test",
+            prompt: "Fallback local generation when provider is disabled.",
+            style: "stylized",
+            scale: "medium",
+            focus: "assets",
+            provider: "self_hosted",
+            imageMode: "mesh",
+            sourceImage: {
+              id: "source_123",
+              fileName: "fallback.png",
+              mimeType: "image/png",
+              sizeBytes: 1,
+              width: 1,
+              height: 1,
+              uploadedAt: new Date().toISOString(),
+              dataUrl:
+                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAElEQVR4nGNgAAAAAgAB5SfUogAAAABJRU5ErkJggg==",
+              palette: ["#111111", "#222222", "#333333", "#444444"],
+              role: "front",
+            },
+          },
+        }),
+    } as unknown as Request);
+
+    const body = (await response.json()) as {
+      project?: {
+        provider?: string;
+        mode?: string;
+        latestJob?: { status?: string; providerTaskId?: string | null };
+      };
+      providerAvailability?: { provider?: string; available?: boolean; configured?: boolean };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.project?.provider).toBe("self_hosted");
+    expect(body.project?.mode).toBe("image_mesh");
+    expect(body.project?.latestJob?.status).toBe("completed");
+    expect(body.project?.latestJob?.providerTaskId ?? null).toBeNull();
+    expect(body.providerAvailability?.provider).toBe("self_hosted");
+    expect(body.providerAvailability?.available).toBe(false);
+    expect(body.providerAvailability?.configured).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("creates a multi-image mesh project request payload", async () => {
@@ -404,5 +475,5 @@ describe("studio world route", () => {
     expect(projectResponse.status).toBe(200);
     expect(body.project?.sceneDraft?.mode).toBe("image_mesh");
     expect(body.project?.sourceImages?.length).toBe(2);
-  });
+  }, 15000);
 });

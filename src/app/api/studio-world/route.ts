@@ -14,6 +14,7 @@ import {
   buildRealAiSummary,
   buildStudioAiProviderAvailability,
   createSelfHostedImageTo3dTask,
+  getSelfHostedImageTo3dTaskDebugLog,
   getSelfHostedImageTo3dTask,
   isRealStudioAiEnabled,
 } from "@/lib/studio-world/provider";
@@ -273,6 +274,7 @@ export async function GET(request: Request) {
         height: task.height ?? null,
         palette: task.palette ?? [],
         errorMessage: task.taskErrorMessage,
+        usingTestMode: task.usingTestMode,
       });
       return NextResponse.json(
         {
@@ -287,6 +289,33 @@ export async function GET(request: Request) {
             },
           },
           providerTask: task,
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    if (action === "task-log") {
+      if (!projectId) {
+        return NextResponse.json(
+          { error: "projectId is required for task log." },
+          { status: 400 },
+        );
+      }
+      const project = getStudioProject(projectId);
+      if (!project?.externalModel?.taskId) {
+        return NextResponse.json(
+          { error: "No external model task exists for this project." },
+          { status: 400 },
+        );
+      }
+      if (project.externalModel.provider !== "self_hosted") {
+        return NextResponse.json(
+          { error: "Unsupported provider for task log." },
+          { status: 400 },
+        );
+      }
+      return NextResponse.json(
+        {
+          taskLog: await getSelfHostedImageTo3dTaskDebugLog(project.externalModel.taskId),
         },
         { headers: { "Cache-Control": "no-store" } },
       );

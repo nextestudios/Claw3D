@@ -1,3 +1,5 @@
+/* eslint-env node */
+/* global Buffer, URL, console, fetch, module, process, require, setTimeout */
 const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
@@ -85,6 +87,8 @@ const writeTaskMetadata = (taskDir, task) => {
   const metadata = {
     id: task.id,
     adapterId: task.adapterId,
+    providerTaskId: typeof task.providerTaskId === "string" ? task.providerTaskId : "",
+    usingTestMode: typeof task.usingTestMode === "boolean" ? task.usingTestMode : null,
     status: task.status,
     progress: task.progress,
     createdAt: task.createdAt,
@@ -125,6 +129,9 @@ const loadTaskMetadata = (rootDir, taskId) => {
       typeof raw.adapterId === "string" && raw.adapterId
         ? raw.adapterId
         : "heightfield_relief",
+    providerTaskId:
+      typeof raw.providerTaskId === "string" ? raw.providerTaskId : "",
+    usingTestMode: typeof raw.usingTestMode === "boolean" ? raw.usingTestMode : undefined,
     status:
       raw.status === "PENDING" ||
       raw.status === "IN_PROGRESS" ||
@@ -1059,10 +1066,80 @@ const fuseColorViews = (views) => {
   );
 };
 
+const delayMs = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const normalizeEnvText = (value) => {
+  const trimmed = (value || "").trim();
+  if (!trimmed || trimmed === "undefined" || trimmed === "null") {
+    return "";
+  }
+  return trimmed;
+};
+
+const resolveWorkerBackendConfig = () => {
+  const modeRaw = normalizeEnvText(process.env.CLAW3D_STUDIO_WORKER_MODE).toLowerCase();
+  const upstreamUrl = normalizeEnvText(process.env.CLAW3D_STUDIO_UPSTREAM_PROVIDER_URL);
+  const mode = modeRaw || (upstreamUrl ? "upstream_openapi" : "local_mock");
+  return {
+    mode: mode === "upstream_openapi" ? "upstream_openapi" : "local_mock",
+    upstreamUrl,
+    upstreamApiKey: normalizeEnvText(process.env.CLAW3D_STUDIO_UPSTREAM_PROVIDER_API_KEY),
+    upstreamPollIntervalMs: parsePositiveInt(
+      process.env.CLAW3D_STUDIO_UPSTREAM_POLL_INTERVAL_MS,
+      1200,
+    ),
+    upstreamTimeoutMs: parsePositiveInt(
+      process.env.CLAW3D_STUDIO_UPSTREAM_TIMEOUT_MS,
+      45 * 60 * 1000,
+    ),
+  };
+};
+
+const toDataUri = (buffer, mimeType) =>
+  `data:${mimeType || "image/png"};base64,${Buffer.from(buffer).toString("base64")}`;
+
+const parseProviderTaskStatus = (value) => {
+  if (
+    value === "PENDING" ||
+    value === "IN_PROGRESS" ||
+    value === "SUCCEEDED" ||
+    value === "FAILED" ||
+    value === "CANCELED"
+  ) {
+    return value;
+  }
+  return "FAILED";
+};
+
+const resolveProviderAssetUrl = (value, providerBaseUrl) => {
+  if (typeof value !== "string" || !value.trim()) return "";
+  return new URL(value.trim(), `${providerBaseUrl}/`).toString();
+};
+
+const downloadBinaryBuffer = async (url, apiKey) => {
+  const response = await fetch(url, {
+    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to download provider artifact ${url} (${response.status}).`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+};
+
 const createTaskStore = () => {
   const tasks = new Map();
   const rootDir = resolveWorkerDir();
   const adapterRegistry = createAdapterRegistry();
+  const backendConfig = resolveWorkerBackendConfig();
 
   const getTaskDir = (taskId) => {
     const dir = path.join(rootDir, taskId);
@@ -1070,23 +1147,25 @@ const createTaskStore = () => {
     return dir;
   };
 
-  const toTaskObject = (task, baseUrl) => ({
+  const toTaskObject = (task, responseBaseUrl) => ({
     id: task.id,
     type: "image-to-3d",
     adapter_id: task.adapterId,
+    provider_task_id: task.providerTaskId || "",
     model_urls: task.modelPath
       ? {
-          glb: `${baseUrl}/openapi/v1/image-to-3d/${task.id}/output/model.glb`,
+          glb: `${responseBaseUrl}/openapi/v1/image-to-3d/${task.id}/output/model.glb`,
         }
       : {},
     thumbnail_url: task.thumbnailPath
-      ? `${baseUrl}/openapi/v1/image-to-3d/${task.id}/output/thumbnail.png`
+      && task.thumbnailPath !== task.sourceImagePath
+      ? `${responseBaseUrl}/openapi/v1/image-to-3d/${task.id}/output/thumbnail.png`
       : "",
     depth_preview_url: task.depthPreviewPath
-      ? `${baseUrl}/openapi/v1/image-to-3d/${task.id}/output/depth.png`
+      ? `${responseBaseUrl}/openapi/v1/image-to-3d/${task.id}/output/depth.png`
       : "",
     normal_preview_url: task.normalPreviewPath
-      ? `${baseUrl}/openapi/v1/image-to-3d/${task.id}/output/normal.png`
+      ? `${responseBaseUrl}/openapi/v1/image-to-3d/${task.id}/output/normal.png`
       : "",
     progress: task.progress,
     width: task.size?.width ?? null,
@@ -1100,25 +1179,380 @@ const createTaskStore = () => {
     task_error: {
       message: task.errorMessage || "",
     },
+    using_test_mode:
+      typeof task.usingTestMode === "boolean"
+        ? task.usingTestMode
+        : backendConfig.mode === "local_mock",
   });
 
-  const createTask = async (params, baseUrl) => {
+  const buildLocalTaskDebugLog = (task) => {
+    const lines = [
+      `Worker mode: ${backendConfig.mode}.`,
+      `Task id: ${task.id}.`,
+      `Status: ${task.status}.`,
+      `Progress: ${task.progress}%.`,
+    ];
+    if (task.providerTaskId) {
+      lines.push(`Upstream task id: ${task.providerTaskId}.`);
+    }
+    if (task.startedAt) {
+      lines.push(`Started at: ${new Date(task.startedAt).toISOString()}.`);
+    }
+    if (task.finishedAt) {
+      lines.push(`Finished at: ${new Date(task.finishedAt).toISOString()}.`);
+    }
+    if (task.errorMessage) {
+      lines.push(`Error: ${task.errorMessage}.`);
+    }
+    return lines.join("\n");
+  };
+
+  const fetchUpstreamTaskDebugLog = async (providerTaskId) => {
+    if (!backendConfig.upstreamUrl || !providerTaskId) {
+      return "";
+    }
+    const response = await fetch(
+      `${backendConfig.upstreamUrl}/image-to-3d/${encodeURIComponent(providerTaskId)}/debug-log`,
+      {
+        cache: "no-store",
+        headers: backendConfig.upstreamApiKey
+          ? { Authorization: `Bearer ${backendConfig.upstreamApiKey}` }
+          : undefined,
+      },
+    );
+    if (response.status === 404) {
+      return "";
+    }
+    const raw = await response.text();
+    let body = {};
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      body = {};
+    }
+    if (!response.ok || !body || typeof body !== "object") {
+      throw new Error(
+        `Upstream provider debug log failed. ${raw.trim() || `${response.status}`}.`,
+      );
+    }
+    return typeof body.log === "string" ? body.log : "";
+  };
+
+  const runLocalTaskGeneration = async (params, sourceImagePath) => {
+    const adapterId = normalizeAdapterId(params.adapterId || adapterRegistry.defaultAdapterId);
+    const adapter = adapterRegistry.getAdapter(adapterId);
+    const baseRaster = decodeRasterImage(params.buffer, params.mimeType || "image/png");
+    const baseSampleParams = { raster: baseRaster, buffer: params.buffer };
+    const viewSamples = [
+      {
+        role: params.role || "front",
+        intensityGrid: sampleIntensityGrid(baseSampleParams, 18),
+        colorGrid: sampleColorGrid(baseSampleParams, 18),
+      },
+      ...(Array.isArray(params.additionalImages)
+        ? params.additionalImages.map((image) => {
+            const raster = decodeRasterImage(image.buffer, image.mimeType || "image/png");
+            const sampleParams = { raster, buffer: image.buffer };
+            return {
+              role: image.role || "detail",
+              intensityGrid: sampleIntensityGrid(sampleParams, 18),
+              colorGrid: sampleColorGrid(sampleParams, 18),
+            };
+          })
+        : []),
+    ];
+    const mergedRaster = mergeRasterViews([
+      baseRaster,
+      ...(Array.isArray(params.additionalImages)
+        ? params.additionalImages.map((image) =>
+            decodeRasterImage(image.buffer, image.mimeType || "image/png"),
+          )
+        : []),
+    ]);
+    const result = await adapter.generate({
+      buffer: params.buffer,
+      raster: mergedRaster,
+      mimeType: params.mimeType || "image/png",
+      sourceImagePath,
+      prompt: params.prompt || "",
+      mode: params.mode || "image_mesh",
+      fusedIntensityGrid: fuseIntensityViews(viewSamples),
+      fusedColorGrid: fuseColorViews(viewSamples),
+    });
+    return {
+      adapterId,
+      modelBuffer: result.glb,
+      thumbnailPath: result.thumbnailSourcePath || sourceImagePath,
+      palette: result.palette || [],
+      size: result.size || null,
+      depthGrid: result.depthGrid || null,
+      normalGrid: result.normalGrid || null,
+    };
+  };
+
+  const runUpstreamTaskGeneration = async (params, task, sourceImagePath) => {
+    if (!backendConfig.upstreamUrl) {
+      throw new Error(
+        "CLAW3D_STUDIO_UPSTREAM_PROVIDER_URL is required when CLAW3D_STUDIO_WORKER_MODE=upstream_openapi.",
+      );
+    }
+    const payload = {
+      image_url: toDataUri(params.buffer, params.mimeType || "image/png"),
+      image_urls: Array.isArray(params.additionalImages)
+        ? params.additionalImages.map((image) => ({
+            image_url: toDataUri(image.buffer, image.mimeType || "image/png"),
+            role: image.role || "detail",
+          }))
+        : [],
+      image_role: params.role || "front",
+      model_type: params.mode === "image_avatar" ? "lowpoly" : "standard",
+      ai_model: "latest",
+      should_texture: true,
+      target_formats: ["glb"],
+      ...(params.prompt ? { texture_prompt: String(params.prompt).trim().slice(0, 600) } : {}),
+      ...(params.adapterId ? { adapter_id: params.adapterId } : {}),
+    };
+    const createResponse = await fetch(`${backendConfig.upstreamUrl}/image-to-3d`, {
+      method: "POST",
+      headers: {
+        ...(backendConfig.upstreamApiKey
+          ? { Authorization: `Bearer ${backendConfig.upstreamApiKey}` }
+          : {}),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    const createRaw = await createResponse.text();
+    let createBody = {};
+    try {
+      createBody = JSON.parse(createRaw);
+    } catch {
+      createBody = {};
+    }
+    const providerTaskId =
+      createBody &&
+      typeof createBody === "object" &&
+      typeof createBody.result === "string" &&
+      createBody.result.trim()
+        ? createBody.result.trim()
+        : "";
+    if (!createResponse.ok || !providerTaskId) {
+      throw new Error(
+        `Upstream provider create task failed. ${createRaw.trim() || `${createResponse.status}`}.`,
+      );
+    }
+    task.providerTaskId = providerTaskId;
+    writeTaskMetadata(getTaskDir(task.id), task);
+
+    let finalTask = null;
+    const startedAt = Date.now();
+    while (!finalTask) {
+      if (Date.now() - startedAt > backendConfig.upstreamTimeoutMs) {
+        throw new Error("Upstream provider task polling timed out.");
+      }
+      const response = await fetch(
+        `${backendConfig.upstreamUrl}/image-to-3d/${encodeURIComponent(providerTaskId)}`,
+        {
+          cache: "no-store",
+          headers: backendConfig.upstreamApiKey
+            ? { Authorization: `Bearer ${backendConfig.upstreamApiKey}` }
+            : undefined,
+        },
+      );
+      const raw = await response.text();
+      let body = {};
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        body = {};
+      }
+      if (!response.ok || !body || typeof body !== "object") {
+        throw new Error(
+          `Upstream provider polling failed. ${raw.trim() || `${response.status}`}.`,
+        );
+      }
+      const status = parseProviderTaskStatus(body.status);
+      const progress =
+        typeof body.progress === "number" && Number.isFinite(body.progress)
+          ? body.progress
+          : task.progress;
+      task.status = status;
+      task.progress = Math.max(task.progress, progress);
+      task.adapterId = normalizeAdapterId(body.adapter_id || task.adapterId);
+      writeTaskMetadata(getTaskDir(task.id), task);
+      if (status === "SUCCEEDED" || status === "FAILED" || status === "CANCELED") {
+        finalTask = body;
+        break;
+      }
+      await delayMs(backendConfig.upstreamPollIntervalMs);
+    }
+
+    const terminalStatus = parseProviderTaskStatus(finalTask.status);
+    if (terminalStatus !== "SUCCEEDED") {
+      const errorMessage =
+        finalTask.task_error &&
+        typeof finalTask.task_error === "object" &&
+        typeof finalTask.task_error.message === "string"
+          ? finalTask.task_error.message
+          : "";
+      throw new Error(
+        errorMessage || `Upstream provider task ended with status ${terminalStatus}.`,
+      );
+    }
+
+    const modelUrl = resolveProviderAssetUrl(
+      finalTask.model_urls && typeof finalTask.model_urls === "object"
+        ? finalTask.model_urls.glb
+        : "",
+      backendConfig.upstreamUrl,
+    );
+    if (!modelUrl) {
+      throw new Error("Upstream provider did not return model_urls.glb.");
+    }
+
+    const [modelBuffer, thumbnailBuffer, depthBuffer, normalBuffer] = await Promise.all([
+      downloadBinaryBuffer(modelUrl, backendConfig.upstreamApiKey),
+      finalTask.thumbnail_url
+        ? downloadBinaryBuffer(
+            resolveProviderAssetUrl(finalTask.thumbnail_url, backendConfig.upstreamUrl),
+            backendConfig.upstreamApiKey,
+          )
+        : Promise.resolve(null),
+      finalTask.depth_preview_url
+        ? downloadBinaryBuffer(
+            resolveProviderAssetUrl(finalTask.depth_preview_url, backendConfig.upstreamUrl),
+            backendConfig.upstreamApiKey,
+          )
+        : Promise.resolve(null),
+      finalTask.normal_preview_url
+        ? downloadBinaryBuffer(
+            resolveProviderAssetUrl(finalTask.normal_preview_url, backendConfig.upstreamUrl),
+            backendConfig.upstreamApiKey,
+          )
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      adapterId: normalizeAdapterId(finalTask.adapter_id || task.adapterId),
+      modelBuffer,
+      thumbnailBuffer,
+      depthBuffer,
+      normalBuffer,
+      thumbnailPath: sourceImagePath,
+      palette: Array.isArray(finalTask.palette)
+        ? finalTask.palette.filter((entry) => typeof entry === "string")
+        : [],
+      size: {
+        width:
+          typeof finalTask.width === "number" && Number.isFinite(finalTask.width)
+            ? finalTask.width
+            : task.size.width,
+        height:
+          typeof finalTask.height === "number" && Number.isFinite(finalTask.height)
+            ? finalTask.height
+            : task.size.height,
+      },
+      depthGrid: null,
+      normalGrid: null,
+      usingTestMode:
+        typeof finalTask.using_test_mode === "boolean" ? finalTask.using_test_mode : undefined,
+    };
+  };
+
+  const applyTaskResult = async (task, taskDir, sourceImagePath, result) => {
+    const modelPath = path.join(taskDir, "model.glb");
+    fs.writeFileSync(modelPath, result.modelBuffer);
+    task.modelPath = modelPath;
+    task.adapterId = normalizeAdapterId(result.adapterId || task.adapterId);
+    if (typeof result.usingTestMode === "boolean") {
+      task.usingTestMode = result.usingTestMode;
+    }
+    task.thumbnailPath = result.thumbnailPath || sourceImagePath;
+    task.palette = Array.isArray(result.palette) ? result.palette : [];
+    if (result.size && typeof result.size === "object") {
+      task.size = {
+        width:
+          typeof result.size.width === "number" && Number.isFinite(result.size.width)
+            ? result.size.width
+            : task.size.width,
+        height:
+          typeof result.size.height === "number" && Number.isFinite(result.size.height)
+            ? result.size.height
+            : task.size.height,
+      };
+    }
+    if (result.thumbnailBuffer) {
+      const thumbnailPath = path.join(taskDir, "thumbnail.png");
+      fs.writeFileSync(thumbnailPath, result.thumbnailBuffer);
+      task.thumbnailPath = thumbnailPath;
+    }
+    if (result.depthBuffer) {
+      const depthPath = path.join(taskDir, "depth.png");
+      fs.writeFileSync(depthPath, result.depthBuffer);
+      task.depthPreviewPath = depthPath;
+    } else if (Array.isArray(result.depthGrid) && result.depthGrid.length > 0) {
+      const depthPath = path.join(taskDir, "depth.png");
+      await writeDepthPreview(depthPath, result.depthGrid);
+      task.depthPreviewPath = depthPath;
+    }
+    if (result.normalBuffer) {
+      const normalPath = path.join(taskDir, "normal.png");
+      fs.writeFileSync(normalPath, result.normalBuffer);
+      task.normalPreviewPath = normalPath;
+    } else if (Array.isArray(result.normalGrid) && result.normalGrid.length > 0) {
+      const normalPath = path.join(taskDir, "normal.png");
+      await writeNormalPreview(normalPath, result.normalGrid);
+      task.normalPreviewPath = normalPath;
+    }
+  };
+
+  const executeTask = async (task, taskDir, sourceImagePath, params) => {
+    task.status = "IN_PROGRESS";
+    task.progress = 18;
+    task.startedAt = Date.now();
+    writeTaskMetadata(taskDir, task);
+    try {
+      const result =
+        backendConfig.mode === "upstream_openapi"
+          ? await runUpstreamTaskGeneration(params, task, sourceImagePath)
+          : await runLocalTaskGeneration(params, sourceImagePath);
+      await applyTaskResult(task, taskDir, sourceImagePath, result);
+      task.progress = 100;
+      task.status = "SUCCEEDED";
+      task.finishedAt = Date.now();
+      writeTaskMetadata(taskDir, task);
+    } catch (error) {
+      task.status = "FAILED";
+      task.progress = 100;
+      task.finishedAt = Date.now();
+      task.errorMessage = error instanceof Error ? error.message : String(error);
+      writeTaskMetadata(taskDir, task);
+    }
+  };
+
+  const createTask = async (params, responseBaseUrl) => {
     const taskId = randomUUID();
     const taskDir = getTaskDir(taskId);
     const sourceImagePath = path.join(taskDir, "source.png");
     fs.writeFileSync(sourceImagePath, params.buffer);
-    const adapterId = normalizeAdapterId(params.adapterId || adapterRegistry.defaultAdapterId);
-    const adapter = adapterRegistry.getAdapter(adapterId);
+    const adapterId = normalizeAdapterId(
+      params.adapterId ||
+        (backendConfig.mode === "upstream_openapi"
+          ? "portrait_volume"
+          : adapterRegistry.defaultAdapterId),
+    );
 
     const task = {
       id: taskId,
       adapterId,
+      usingTestMode: backendConfig.mode === "local_mock",
       status: "PENDING",
       progress: 0,
       createdAt: Date.now(),
       startedAt: 0,
       finishedAt: 0,
       modelPath: null,
+      providerTaskId: "",
       thumbnailPath: sourceImagePath,
       depthPreviewPath: null,
       normalPreviewPath: null,
@@ -1131,84 +1565,22 @@ const createTaskStore = () => {
     tasks.set(taskId, task);
     writeTaskMetadata(taskDir, task);
 
-    setTimeout(async () => {
-      task.status = "IN_PROGRESS";
-      task.progress = 18;
-      task.startedAt = Date.now();
-      writeTaskMetadata(taskDir, task);
-      try {
-        const baseRaster = decodeRasterImage(params.buffer, params.mimeType || "image/png");
-        const baseSampleParams = { raster: baseRaster, buffer: params.buffer };
-        const viewSamples = [
-          {
-            role: params.role || "front",
-            intensityGrid: sampleIntensityGrid(baseSampleParams, 18),
-            colorGrid: sampleColorGrid(baseSampleParams, 18),
-          },
-          ...(Array.isArray(params.additionalImages)
-            ? params.additionalImages.map((image) => {
-                const raster = decodeRasterImage(image.buffer, image.mimeType || "image/png");
-                const sampleParams = { raster, buffer: image.buffer };
-                return {
-                  role: image.role || "detail",
-                  intensityGrid: sampleIntensityGrid(sampleParams, 18),
-                  colorGrid: sampleColorGrid(sampleParams, 18),
-                };
-              })
-            : []),
-        ];
-        const mergedRaster = mergeRasterViews([
-          baseRaster,
-          ...(Array.isArray(params.additionalImages)
-            ? params.additionalImages.map((image) =>
-                decodeRasterImage(image.buffer, image.mimeType || "image/png"),
-              )
-            : []),
-        ]);
-        const result = await adapter.generate({
-          buffer: params.buffer,
-          raster: mergedRaster,
-          mimeType: params.mimeType || "image/png",
-          sourceImagePath,
-          prompt: params.prompt || "",
-          mode: params.mode || "image_mesh",
-          fusedIntensityGrid: fuseIntensityViews(viewSamples),
-          fusedColorGrid: fuseColorViews(viewSamples),
-        });
-        const modelPath = path.join(taskDir, "model.glb");
-        const depthPreviewPath = path.join(taskDir, "depth.png");
-        const normalPreviewPath = path.join(taskDir, "normal.png");
-        fs.writeFileSync(modelPath, result.glb);
-        if (Array.isArray(result.depthGrid) && result.depthGrid.length > 0) {
-          await writeDepthPreview(depthPreviewPath, result.depthGrid);
-          task.depthPreviewPath = depthPreviewPath;
-        }
-        if (Array.isArray(result.normalGrid) && result.normalGrid.length > 0) {
-          await writeNormalPreview(normalPreviewPath, result.normalGrid);
-          task.normalPreviewPath = normalPreviewPath;
-        }
-        task.modelPath = modelPath;
-        task.thumbnailPath = result.thumbnailSourcePath || sourceImagePath;
-        task.palette = result.palette || [];
-        task.size = result.size || task.size;
-        task.progress = 100;
-        task.status = "SUCCEEDED";
-        task.finishedAt = Date.now();
-        writeTaskMetadata(taskDir, task);
-      } catch (error) {
-        task.status = "FAILED";
-        task.progress = 100;
-        task.finishedAt = Date.now();
-        task.errorMessage = error instanceof Error ? error.message : String(error);
-        writeTaskMetadata(taskDir, task);
-      }
-    }, TASK_TIMEOUT_MS);
+    const taskDelayMs = backendConfig.mode === "upstream_openapi" ? 0 : TASK_TIMEOUT_MS;
+    setTimeout(() => {
+      void executeTask(task, taskDir, sourceImagePath, params);
+    }, taskDelayMs);
 
-    return { result: taskId, task: toTaskObject(task, baseUrl) };
+    return { result: taskId, task: toTaskObject(task, responseBaseUrl) };
   };
 
   return {
     listAdapters() {
+      if (backendConfig.mode === "upstream_openapi") {
+        return [
+          { id: "portrait_volume", label: "Portrait volume" },
+          { id: "heightfield_relief", label: "Heightfield relief" },
+        ];
+      }
       return adapterRegistry.listAdapters();
     },
     initialize() {
@@ -1220,10 +1592,10 @@ const createTaskStore = () => {
       }
     },
     createTask,
-    getTask(taskId, baseUrl) {
+    getTask(taskId, responseBaseUrl) {
       const task = tasks.get(taskId);
       if (!task) return null;
-      return toTaskObject(task, baseUrl);
+      return toTaskObject(task, responseBaseUrl);
     },
     getTaskFile(taskId, kind) {
       const task = tasks.get(taskId);
@@ -1234,12 +1606,24 @@ const createTaskStore = () => {
       if (kind === "normal") return task.normalPreviewPath;
       return null;
     },
+    async getTaskDebugLog(taskId) {
+      const task = tasks.get(taskId);
+      if (!task) return null;
+      if (backendConfig.mode !== "upstream_openapi") {
+        return buildLocalTaskDebugLog(task);
+      }
+      const upstreamLog = await fetchUpstreamTaskDebugLog(task.providerTaskId);
+      return upstreamLog || buildLocalTaskDebugLog(task);
+    },
   };
 };
 
 const createStudioAiWorkerServer = (params = {}) => {
   const host = params.host || DEFAULT_HOST;
   const port = Number.isFinite(params.port) ? params.port : DEFAULT_PORT;
+  const publicBaseUrl = normalizeEnvText(
+    params.publicBaseUrl || process.env.CLAW3D_STUDIO_PROVIDER_PUBLIC_URL || "",
+  ).replace(/\/+$/, "");
   const taskStore = createTaskStore();
   taskStore.initialize();
 
@@ -1260,11 +1644,15 @@ const createStudioAiWorkerServer = (params = {}) => {
 
     const url = new URL(req.url, `http://${host}:${port}`);
     const pathname = url.pathname;
-    const baseUrl = `http://${host}:${port}`;
+    const responseBaseUrl = publicBaseUrl || `http://${host}:${port}`;
 
     try {
       if (req.method === "GET" && pathname === "/health") {
-        respondJson(res, 200, { ok: true, service: "studio-ai-worker" });
+        respondJson(res, 200, {
+          ok: true,
+          service: "studio-ai-worker",
+          public_base_url: responseBaseUrl,
+        });
         return;
       }
 
@@ -1319,7 +1707,7 @@ const createStudioAiWorkerServer = (params = {}) => {
             mimeType,
             role: normalizeImageRole(body.image_role || "front"),
           },
-          baseUrl,
+          responseBaseUrl,
         );
         respondJson(res, 200, { result: created.result });
         return;
@@ -1327,12 +1715,23 @@ const createStudioAiWorkerServer = (params = {}) => {
 
       const taskMatch = pathname.match(/^\/openapi\/v1\/image-to-3d\/([^/]+)$/);
       if (req.method === "GET" && taskMatch) {
-        const task = taskStore.getTask(taskMatch[1], baseUrl);
+        const task = taskStore.getTask(taskMatch[1], responseBaseUrl);
         if (!task) {
           respondJson(res, 404, { error: "Task not found." });
           return;
         }
         respondJson(res, 200, task);
+        return;
+      }
+
+      const debugLogMatch = pathname.match(/^\/openapi\/v1\/image-to-3d\/([^/]+)\/debug-log$/);
+      if (req.method === "GET" && debugLogMatch) {
+        const log = await taskStore.getTaskDebugLog(debugLogMatch[1]);
+        if (log === null) {
+          respondJson(res, 404, { error: "Task not found." });
+          return;
+        }
+        respondJson(res, 200, { log });
         return;
       }
 

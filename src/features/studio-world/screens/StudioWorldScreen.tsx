@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HeaderBar } from "@/features/agents/components/HeaderBar";
 import { exportStudioProjectGlb } from "@/features/studio-world/export/exportGlb";
 import { StudioWorldPreview } from "@/features/studio-world/preview/StudioWorldPreview";
+import { StudioWorldTaskLogCard } from "@/features/studio-world/screens/StudioWorldTaskLogCard";
 import type {
   StudioProviderAvailability,
   StudioProjectRecord,
@@ -43,6 +44,11 @@ const IMAGE_ROLE_OPTIONS: Array<NonNullable<StudioSourceImageRecord["role"]>> = 
   "detail",
 ];
 
+const STUDIO_INPUT_CLASS =
+  "ui-input w-full !text-foreground placeholder:!text-muted-foreground";
+const STUDIO_TEXTAREA_CLASS = `${STUDIO_INPUT_CLASS} min-h-36 resize-y`;
+const STUDIO_SELECT_CLASS = "ui-input w-full !text-foreground";
+
 type ExportManifestResponse = {
   exportManifest?: unknown;
   error?: string;
@@ -71,6 +77,32 @@ type StudioWorldResponse = {
   };
   deleted?: boolean;
   error?: string;
+};
+
+type StudioWorldTaskStatusResponse = StudioWorldResponse & {
+  project: StudioProjectRecord;
+};
+
+const shouldPollExternalModel = (externalModel?: StudioProjectRecord["externalModel"] | null) =>
+  externalModel?.status === "pending" ||
+  externalModel?.status === "in_progress" ||
+  (externalModel?.status === "completed" && !externalModel.glbUrl?.trim());
+
+const fetchProjectTaskStatus = async (
+  projectId: string,
+): Promise<StudioWorldTaskStatusResponse> => {
+  const response = await fetch(
+    `/api/studio-world?action=task-status&projectId=${encodeURIComponent(projectId)}`,
+    { cache: "no-store" },
+  );
+  const body = (await response.json()) as StudioWorldResponse;
+  if (!response.ok || !body.project) {
+    throw new Error(body.error || "Failed to load task status.");
+  }
+  return {
+    ...body,
+    project: body.project,
+  };
 };
 
 const downloadFileFromUrl = async (params: {
@@ -138,6 +170,7 @@ export function StudioWorldScreen() {
     () => projects.find((entry) => entry.id === selectedProjectId) ?? projects[0] ?? null,
     [projects, selectedProjectId],
   );
+  const shouldPollRemoteTask = shouldPollExternalModel(selectedProject?.externalModel);
 
   const refreshProjects = useCallback(async () => {
     setLoading(true);
@@ -178,31 +211,25 @@ export function StudioWorldScreen() {
   }, [providerAvailability, selectedProject]);
 
   useEffect(() => {
-    if (!selectedProject?.externalModel?.taskId) return;
-    if (
-      selectedProject.externalModel.status !== "pending" &&
-      selectedProject.externalModel.status !== "in_progress"
-    ) {
-      return;
-    }
+    if (!selectedProject?.externalModel?.taskId || !shouldPollRemoteTask) return;
     let cancelled = false;
     const poll = async () => {
       try {
-        const response = await fetch(
-          `/api/studio-world?action=task-status&projectId=${encodeURIComponent(selectedProject.id)}`,
-          { cache: "no-store" },
-        );
-        const body = (await response.json()) as StudioWorldResponse;
-        if (!response.ok || !body.project || cancelled) {
-          return;
-        }
+        const body = await fetchProjectTaskStatus(selectedProject.id);
+        if (cancelled) return;
         setProjects((current) =>
-          current.map((entry) => (entry.id === body.project!.id ? body.project! : entry)),
+          current.map((entry) => (entry.id === body.project.id ? body.project : entry)),
         );
-        if (body.providerTask?.status === "SUCCEEDED") {
-          setStatusLine("Real AI image-to-3D task completed.");
-        } else if (body.providerTask?.status === "FAILED" || body.providerTask?.status === "CANCELED") {
-          setStatusLine(body.providerTask.taskErrorMessage || "Real AI image-to-3D task failed.");
+        const nextStatusLine =
+          body.providerTask?.status === "SUCCEEDED"
+            ? body.project.externalModel?.glbUrl
+              ? "Real AI image-to-3D task completed."
+              : "Real AI image-to-3D task completed. Syncing provider GLB."
+            : body.providerTask?.status === "FAILED" || body.providerTask?.status === "CANCELED"
+              ? body.providerTask.taskErrorMessage || "Real AI image-to-3D task failed."
+              : null;
+        if (nextStatusLine) {
+          setStatusLine(nextStatusLine);
         }
       } catch {
         // ignore transient poll failures; next interval may succeed
@@ -216,7 +243,7 @@ export function StudioWorldScreen() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [selectedProject]);
+  }, [selectedProject?.id, selectedProject?.externalModel?.taskId, shouldPollRemoteTask]);
 
   const handleImageUpload = async (file: File) => {
     setUploadingImage(true);
@@ -260,6 +287,10 @@ export function StudioWorldScreen() {
           : image,
       ),
     );
+  };
+
+  const handleRemoveImage = (imageId: string) => {
+    setUploadedImages((current) => current.filter((image) => image.id !== imageId));
   };
 
   const handleGenerate = async () => {
@@ -535,7 +566,21 @@ export function StudioWorldScreen() {
                     <div className="mt-3 space-y-3">
                       <div className="grid gap-3 sm:grid-cols-3">
                         {uploadedImages.map((image, index) => (
-                          <div key={image.id} className="overflow-hidden rounded-xl border border-border/60 bg-black/10">
+                          <div
+                            key={image.id}
+                            className="overflow-hidden rounded-xl border border-border/60 bg-black/10"
+                          >
+                            <div className="flex items-center justify-end border-b border-border/50 px-3 py-2">
+                              <button
+                                type="button"
+                                className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                                onClick={() => handleRemoveImage(image.id)}
+                                disabled={busy || uploadingImage}
+                                aria-label={`Remove ${image.fileName}`}
+                              >
+                                Remove
+                              </button>
+                            </div>
                             <Image
                               src={image.dataUrl}
                               alt={image.fileName}
@@ -554,7 +599,7 @@ export function StudioWorldScreen() {
                                   View role
                                 </span>
                                 <select
-                                  className="ui-input w-full"
+                                  className={STUDIO_SELECT_CLASS}
                                   value={image.role ?? (index === 0 ? "front" : "side")}
                                   onChange={(event) =>
                                     handleImageRoleChange(
@@ -630,7 +675,7 @@ export function StudioWorldScreen() {
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-medium text-foreground">Project name</span>
                   <input
-                    className="ui-input w-full"
+                    className={STUDIO_INPUT_CLASS}
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     placeholder="Studio Prototype"
@@ -639,7 +684,7 @@ export function StudioWorldScreen() {
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-medium text-foreground">Generation brief</span>
                   <textarea
-                    className="ui-input min-h-36 w-full resize-y"
+                    className={STUDIO_TEXTAREA_CLASS}
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
                     placeholder="Describe the world, hero assets, camera mood, and export intent."
@@ -649,7 +694,7 @@ export function StudioWorldScreen() {
                   <label className="block">
                     <span className="mb-1.5 block text-xs font-medium text-foreground">Generation backend</span>
                     <select
-                      className="ui-input w-full"
+                      className={STUDIO_SELECT_CLASS}
                       value={provider}
                       onChange={(event) => setProvider(event.target.value as StudioWorldGenerationProvider)}
                     >
@@ -665,7 +710,7 @@ export function StudioWorldScreen() {
                   <label className="block">
                     <span className="mb-1.5 block text-xs font-medium text-foreground">Worker strategy</span>
                     <select
-                      className="ui-input w-full"
+                      className={STUDIO_SELECT_CLASS}
                       value={workerAdapter}
                       onChange={(event) => setWorkerAdapter(event.target.value as StudioWorkerAdapterKind)}
                     >
@@ -675,7 +720,7 @@ export function StudioWorldScreen() {
                   </label>
                   <label className="block">
                     <span className="mb-1.5 block text-xs font-medium text-foreground">Style</span>
-                    <select className="ui-input w-full" value={style} onChange={(event) => setStyle(event.target.value as StudioWorldStyle)}>
+                    <select className={STUDIO_SELECT_CLASS} value={style} onChange={(event) => setStyle(event.target.value as StudioWorldStyle)}>
                       {STYLE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
@@ -685,7 +730,7 @@ export function StudioWorldScreen() {
                   </label>
                   <label className="block">
                     <span className="mb-1.5 block text-xs font-medium text-foreground">Scale</span>
-                    <select className="ui-input w-full" value={scale} onChange={(event) => setScale(event.target.value as StudioWorldScale)}>
+                    <select className={STUDIO_SELECT_CLASS} value={scale} onChange={(event) => setScale(event.target.value as StudioWorldScale)}>
                       {SCALE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
@@ -695,7 +740,7 @@ export function StudioWorldScreen() {
                   </label>
                   <label className="block">
                     <span className="mb-1.5 block text-xs font-medium text-foreground">Focus</span>
-                    <select className="ui-input w-full" value={focus} onChange={(event) => setFocus(event.target.value as StudioWorldFocus)}>
+                    <select className={STUDIO_SELECT_CLASS} value={focus} onChange={(event) => setFocus(event.target.value as StudioWorldFocus)}>
                       {FOCUS_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
                           {option.label}
@@ -706,7 +751,7 @@ export function StudioWorldScreen() {
                   <label className="block">
                     <span className="mb-1.5 block text-xs font-medium text-foreground">Seed</span>
                     <input
-                      className="ui-input w-full"
+                      className={STUDIO_INPUT_CLASS}
                       value={seed}
                       onChange={(event) => setSeed(event.target.value)}
                       placeholder="Optional deterministic seed"
@@ -777,6 +822,10 @@ export function StudioWorldScreen() {
                       </div>
                     </div>
                   </div>
+                  <StudioWorldTaskLogCard
+                    key={selectedProject.externalModel?.taskId ?? selectedProject.id}
+                    project={selectedProject}
+                  />
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border/70 text-sm text-muted-foreground">

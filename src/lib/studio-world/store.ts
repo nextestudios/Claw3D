@@ -198,7 +198,10 @@ const normalizeStore = (value: unknown): StudioProjectsStore => {
                 : [],
               errorMessage:
                 asString(entry.externalModel.errorMessage, "").trim() || null,
-              usingTestMode: entry.externalModel.usingTestMode === true,
+              usingTestMode:
+                typeof entry.externalModel.usingTestMode === "boolean"
+                  ? entry.externalModel.usingTestMode
+                  : undefined,
             } satisfies StudioExternalModelRecord)
           : null,
       };
@@ -414,7 +417,8 @@ export const createStudioPendingProject = (params: {
       palette: [],
       textureUrls: [],
       errorMessage: null,
-      usingTestMode: params.usingTestMode === true,
+      usingTestMode:
+        typeof params.usingTestMode === "boolean" ? params.usingTestMode : undefined,
     },
   };
   store.projects = [project, ...store.projects].sort((left, right) =>
