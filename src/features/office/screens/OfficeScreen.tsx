@@ -12,7 +12,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { MessageSquare, ChevronDown, ChevronLeft, ChevronRight, Mic } from "lucide-react";
 import type { OfficeAgent } from "@/features/retro-office/core/types";
 import { PixelOffice2D } from "@/features/office/components/PixelOffice2D";
-import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
 import { GatewayConnectScreen } from "@/features/agents/components/GatewayConnectScreen";
 import { useAgentStore, type AgentState } from "@/features/agents/state/store";
 import {
@@ -62,6 +61,7 @@ import {
 } from "@/lib/text/message-extract";
 import { resolveOfficeIntentSnapshot } from "@/lib/office/deskDirectives";
 import { OfficeFloorNav } from "@/features/office/components/OfficeFloorNav";
+import { PixelRuntimeBootCard } from "@/features/office/components/PixelRuntimeBootCard";
 import { AgentChatPanel } from "@/features/agents/components/AgentChatPanel";
 import {
   RemoteAgentChatPanel,
@@ -4710,19 +4710,13 @@ export function OfficeScreen({
           aria-label="Connecting to runtime"
           role="status"
         >
-          <div className="rounded-xl border border-amber-700/45 bg-[#1a1008] px-8 py-6 shadow-2xl">
-            <RunningAvatarLoader
-              size={28}
-              trackWidth={76}
-              label="Connecting to your runtime..."
-              labelClassName="text-amber-100/80"
-            />
-          </div>
+          <PixelRuntimeBootCard />
         </div>
       ) : null}
       {showGatewayConnectOverlay ? (
-        <div className="pointer-events-auto absolute inset-0 z-50 flex items-start justify-center bg-[#120a05]/76 px-4 py-10">
-          <div className="w-full max-w-[860px] rounded-2xl border border-amber-900/55 bg-[#120a05]/98 p-3 shadow-2xl">
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-stretch justify-end">
+          <div className="pointer-events-none hidden flex-1 bg-[linear-gradient(90deg,rgba(18,10,5,0.08),rgba(18,10,5,0.36)_45%,rgba(18,10,5,0.62))] lg:block" />
+          <div className="pointer-events-auto flex h-full w-full max-w-[560px] flex-col border-l border-amber-900/45 bg-[#120a05]/88 px-3 py-3 shadow-2xl backdrop-blur md:px-4 md:py-4">
             <GatewayConnectScreen
               gatewayUrl={gatewayUrl}
               token={token}
@@ -4753,6 +4747,7 @@ export function OfficeScreen({
         <PixelOffice2D
           key={activeFloor.id}
           agents={allVisibleAgents}
+          connectPromptOpen={showGatewayConnectOverlay}
           storageNamespace={activeFloor.id}
           layoutPreset={activeFloor.kind === "lobby" ? "lobby" : "office"}
           officeCenterSignal={officeCameraCenterSignal}

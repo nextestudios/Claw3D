@@ -1,0 +1,51 @@
+{
+  "generatedBy": "scripts/generate-pixel-assets.mjs",
+  "tileSize": 32,
+  "sheets": {
+    "agents": {
+      "path": "/office-assets/pixel/agents.png",
+      "frame": {
+        "width": 48,
+        "height": 64
+      },
+      "frames": [
+        "worker-blue",
+        "worker-green",
+        "worker-pink",
+        "receptionist"
+      ]
+    },
+    "objects": {
+      "path": "/office-assets/pixel/objects.png",
+      "frame": {
+        "width": 96,
+        "height": 96
+      },
+      "frames": [
+        "desk",
+        "plant",
+        "bookshelf",
+        "water-cooler",
+        "monitor",
+        "vending",
+        "meeting-table",
+        "tree"
+      ]
+    },
+    "tiles": {
+      "path": "/office-assets/pixel/tiles.png",
+      "frame": {
+        "width": 32,
+        "height": 32
+      },
+      "frames": [
+        "green",
+        "blue",
+        "purple",
+        "beige",
+        "gray",
+        "wood"
+      ]
+    }
+  }
+}

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Activity,
   Bot,
   MessageSquare,
   Pencil,
@@ -16,6 +15,7 @@ import type { OfficeAgent } from "@/features/retro-office/core/types";
 
 type PixelOffice2DProps = {
   agents: OfficeAgent[];
+  connectPromptOpen?: boolean;
   officeTitle?: string;
   officeTitleLoaded?: boolean;
   gatewayStatus?: string;
@@ -110,6 +110,11 @@ const sectorSlots: Record<string, AgentSlot[]> = {
   ],
 };
 
+const agentSpriteSheet = "/office-assets/pixel/agents.png";
+const objectSpriteSheet = "/office-assets/pixel/objects.png";
+const agentSpriteFrame = { width: 48, height: 64, count: 4 };
+const objectSpriteFrame = { width: 96, height: 96, count: 8 };
+
 const pixelTextShadow = {
   textShadow: "2px 0 #1a1510, -2px 0 #1a1510, 0 2px #1a1510, 0 -2px #1a1510",
 };
@@ -150,6 +155,66 @@ const formatLastSeen = (timestamp: number | undefined) => {
   if (minutes < 60) return `${minutes}m`;
   return `${Math.round(minutes / 60)}h`;
 };
+
+const sheetStyle = ({
+  frame,
+  frameHeight,
+  frameWidth,
+  sheet,
+  totalFrames,
+}: {
+  frame: number;
+  frameHeight: number;
+  frameWidth: number;
+  sheet: string;
+  totalFrames: number;
+}): CSSProperties => ({
+  backgroundImage: `url(${sheet})`,
+  backgroundPosition: `-${frame * frameWidth}px 0`,
+  backgroundRepeat: "no-repeat",
+  backgroundSize: `${frameWidth * totalFrames}px ${frameHeight}px`,
+  imageRendering: "pixelated",
+});
+
+function ObjectSprite({
+  className = "",
+  frame,
+  height = 96,
+  extraStyle,
+  title,
+  width = 96,
+  x,
+  y,
+}: AgentSlot & {
+  className?: string;
+  extraStyle?: CSSProperties;
+  frame: number;
+  height?: number;
+  title?: string;
+  width?: number;
+}) {
+  return (
+    <div
+      aria-hidden={title ? undefined : true}
+      className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 ${className}`}
+      style={{
+        left: `${x}%`,
+        top: `${y}%`,
+        width,
+        height,
+        ...sheetStyle({
+          frame,
+          frameHeight: objectSpriteFrame.height,
+          frameWidth: objectSpriteFrame.width,
+          sheet: objectSpriteSheet,
+          totalFrames: objectSpriteFrame.count,
+        }),
+        ...extraStyle,
+      }}
+      title={title}
+    />
+  );
+}
 
 function PixelSign({
   capacity,
@@ -215,14 +280,7 @@ function Room({
 
 function PixelDesk({ x, y }: AgentSlot) {
   return (
-    <div
-      className="absolute h-[54px] w-[74px] -translate-x-1/2 -translate-y-1/2 border-4 border-[#362415] bg-[#9a6b36] shadow-[0_5px_0_rgba(0,0,0,0.32)]"
-      style={{ left: `${x}%`, top: `${y}%` }}
-    >
-      <div className="absolute left-2 top-2 h-5 w-7 border-2 border-[#15191f] bg-[#1f303b]" />
-      <div className="absolute right-3 top-1 h-8 w-5 border-2 border-[#11161c] bg-[#243949]" />
-      <div className="absolute bottom-2 left-3 h-2 w-7 bg-[#2c2018]" />
-    </div>
+    <ObjectSprite frame={0} x={x} y={y} title="desk" />
   );
 }
 
@@ -243,8 +301,12 @@ function PixelAgentSprite({
   runCount?: number;
   streamingText?: string | null;
 }) {
-  const jacket = agent.color || "#2d7ecb";
-  const hair = agent.status === "error" ? "#5b1d1d" : "#1c1714";
+  const frame =
+    agent.status === "working"
+      ? 1
+      : agent.status === "error"
+        ? 2
+        : Math.abs(agent.id.charCodeAt(0) ?? 0) % 2;
   const statusColor =
     agent.status === "working"
       ? "bg-[#55dc78]"
@@ -259,29 +321,21 @@ function PixelAgentSprite({
     >
       <button
         type="button"
-        className="relative block h-[58px] w-[38px] cursor-pointer outline-none transition-transform hover:-translate-y-1 focus-visible:-translate-y-1"
+        className="relative block h-16 w-12 cursor-pointer outline-none transition-transform hover:-translate-y-1 focus-visible:-translate-y-1"
         aria-label={`Abrir chat de ${agent.name}`}
         title={`${agent.name} - ${statusLabel(agent.status)}`}
         onClick={() => onChat?.(agent.id)}
+        style={{
+          ...sheetStyle({
+            frame,
+            frameHeight: agentSpriteFrame.height,
+            frameWidth: agentSpriteFrame.width,
+            sheet: agentSpriteSheet,
+            totalFrames: agentSpriteFrame.count,
+          }),
+          animation: `pixel-float ${2.4 + (agent.id.length % 3) * 0.35}s ease-in-out infinite`,
+        }}
       >
-        <span className="absolute left-[9px] top-0 h-[11px] w-[20px] bg-[#1b130f]" />
-        <span
-          className="absolute left-[7px] top-[7px] h-[21px] w-[24px] border-[3px] border-[#1b130f] bg-[#d99562]"
-          style={{ boxShadow: "inset 4px -4px rgba(0,0,0,0.12)" }}
-        />
-        <span
-          className="absolute left-[5px] top-[25px] h-[25px] w-[28px] border-[3px] border-[#1b130f]"
-          style={{ backgroundColor: jacket }}
-        />
-        <span className="absolute left-[11px] top-[14px] h-[4px] w-[4px] bg-[#17120f]" />
-        <span className="absolute right-[11px] top-[14px] h-[4px] w-[4px] bg-[#17120f]" />
-        <span className="absolute left-[12px] top-[23px] h-[3px] w-[14px] bg-[#8c4d3a]" />
-        <span className="absolute left-[6px] top-[48px] h-[8px] w-[10px] bg-[#1a2530]" />
-        <span className="absolute right-[6px] top-[48px] h-[8px] w-[10px] bg-[#1a2530]" />
-        <span
-          className="absolute left-[5px] top-[4px] h-[13px] w-[28px]"
-          style={{ backgroundColor: hair }}
-        />
         <span
           className={`absolute -right-1 top-0 h-3 w-3 border-2 border-[#17120f] ${statusColor}`}
         />
@@ -319,49 +373,44 @@ function PixelAgentSprite({
 function Receptionist() {
   return (
     <div className="absolute left-1/2 top-[25%] z-30 -translate-x-1/2 -translate-y-1/2">
-      <div className="relative h-[58px] w-[38px]">
-        <span className="absolute left-[9px] top-0 h-[11px] w-[20px] bg-[#2b1d16]" />
-        <span className="absolute left-[7px] top-[7px] h-[21px] w-[24px] border-[3px] border-[#1b130f] bg-[#d99562]" />
-        <span className="absolute left-[5px] top-[25px] h-[25px] w-[28px] border-[3px] border-[#1b130f] bg-[#20304a]" />
-        <span className="absolute left-[11px] top-[14px] h-[4px] w-[4px] bg-[#17120f]" />
-        <span className="absolute right-[11px] top-[14px] h-[4px] w-[4px] bg-[#17120f]" />
-      </div>
+      <div
+        className="relative h-16 w-12"
+        style={{
+          ...sheetStyle({
+            frame: 3,
+            frameHeight: agentSpriteFrame.height,
+            frameWidth: agentSpriteFrame.width,
+            sheet: agentSpriteSheet,
+            totalFrames: agentSpriteFrame.count,
+          }),
+          animation: "pixel-float 2.8s ease-in-out infinite",
+        }}
+      />
     </div>
   );
 }
 
 function Plant({ x, y }: AgentSlot) {
-  return (
-    <div
-      className="absolute z-30 h-16 w-14 -translate-x-1/2 -translate-y-1/2"
-      style={{ left: `${x}%`, top: `${y}%` }}
-    >
-      <span className="absolute bottom-0 left-1/2 h-5 w-7 -translate-x-1/2 border-2 border-[#3b2515] bg-[#7a5730]" />
-      <span className="absolute left-2 top-4 h-8 w-8 bg-[#3f8f3e] shadow-[12px_-8px_0_#57a852,20px_5px_0_#2e7433,4px_-12px_0_#6ac45e]" />
-    </div>
-  );
+  return <ObjectSprite className="z-30" frame={1} x={x} y={y} title="plant" />;
 }
 
 function Bookshelf({ x, y }: AgentSlot) {
-  return (
-    <div
-      className="absolute z-20 h-[58px] w-[82px] -translate-x-1/2 -translate-y-1/2 border-4 border-[#342215] bg-[#8b5c31]"
-      style={{ left: `${x}%`, top: `${y}%` }}
-    >
-      <span className="absolute left-2 top-2 h-3 w-5 bg-[#4e89bf]" />
-      <span className="absolute left-8 top-2 h-3 w-3 bg-[#db8a4c]" />
-      <span className="absolute left-12 top-2 h-3 w-6 bg-[#7bc86c]" />
-      <span className="absolute left-2 top-7 h-3 w-6 bg-[#d9c15d]" />
-      <span className="absolute left-10 top-7 h-3 w-5 bg-[#cb5f8d]" />
-      <span className="absolute inset-x-1 top-[25px] h-1 bg-[#3a2414]" />
-    </div>
-  );
+  return <ObjectSprite frame={2} x={x} y={y} title="bookshelf" />;
 }
 
 function MeetingTable() {
   return (
-    <div className="absolute left-1/2 top-[72%] z-20 h-[146px] w-[112px] -translate-x-1/2 -translate-y-1/2 border-4 border-[#2d1d12] bg-[#8b5b2c] shadow-[0_8px_0_rgba(0,0,0,0.35)]">
-      <div className="absolute inset-3 border-2 border-[#b8854d]" />
+    <div className="absolute left-1/2 top-[72%] z-20 h-[146px] w-[112px] -translate-x-1/2 -translate-y-1/2">
+      <div
+        className="absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2"
+        style={sheetStyle({
+          frame: 6,
+          frameHeight: objectSpriteFrame.height,
+          frameWidth: objectSpriteFrame.width,
+          sheet: objectSpriteSheet,
+          totalFrames: objectSpriteFrame.count,
+        })}
+      />
       {[
         ["-38px", "14px"],
         ["-38px", "58px"],
@@ -382,6 +431,7 @@ function MeetingTable() {
 
 export function PixelOffice2D({
   agents,
+  connectPromptOpen = false,
   gatewayStatus = "disconnected",
   lastSeenByAgentId = {},
   officeTitle = "CLAW3D",
@@ -443,10 +493,16 @@ export function PixelOffice2D({
         >
           <div className="absolute inset-x-0 bottom-0 h-[13%] bg-[#3a7a3d]" />
           {Array.from({ length: 11 }).map((_, index) => (
-            <span
+            <ObjectSprite
               key={index}
-              className="absolute bottom-[4%] h-14 w-14 rounded-none bg-[#23642d] shadow-[9px_-7px_0_#3d8a3f,-7px_7px_0_#1e5227]"
-              style={{ left: `${2 + index * 9}%` }}
+              extraStyle={{
+                animation: `pixel-sway ${3.6 + (index % 3) * 0.5}s ease-in-out infinite`,
+                transformOrigin: "bottom center",
+              }}
+              frame={7}
+              className="z-10"
+              x={4 + index * 9}
+              y={92}
             />
           ))}
 
@@ -506,7 +562,7 @@ export function PixelOffice2D({
             ))}
             <Bookshelf x={24} y={21} />
             <Plant x={94} y={83} />
-            <div className="absolute right-[8%] top-[60%] h-[74px] w-[36px] border-4 border-[#17384d] bg-[#69c6ee] shadow-[0_5px_0_rgba(0,0,0,0.35)]" />
+            <ObjectSprite frame={3} x={91} y={61} title="water cooler" />
           </Room>
 
           <Room
@@ -620,13 +676,18 @@ export function PixelOffice2D({
             </div>
             <button
               type="button"
-              className="absolute bottom-[23%] left-[52%] z-30 grid h-[74px] w-[58px] place-items-center border-4 border-[#442817] bg-[#c84f3c] text-[#1d1710] shadow-[0_7px_0_rgba(0,0,0,0.35)] transition-transform hover:-translate-y-1"
+              className="absolute bottom-[18%] left-[49%] z-30 h-24 w-24 border-0 text-[#1d1710] transition-transform hover:-translate-y-1"
+              style={sheetStyle({
+                frame: 5,
+                frameHeight: objectSpriteFrame.height,
+                frameWidth: objectSpriteFrame.width,
+                sheet: objectSpriteSheet,
+                totalFrames: objectSpriteFrame.count,
+              })}
               onClick={() => agents[0] && onMonitorSelect?.(agents[0].id)}
               title="Abrir monitor"
               aria-label="Abrir monitor"
-            >
-              <Activity size={24} strokeWidth={3} />
-            </button>
+            />
             <div className="absolute right-[8%] top-[18%] border-4 border-[#2b251d] bg-[#eedfc1] p-4 text-center font-mono text-[12px] font-black uppercase text-[#2b251d]">
               AUTONOMIA
               <br />
@@ -660,24 +721,28 @@ export function PixelOffice2D({
         {workingCount} trabalhando
       </div>
 
-      {agents.length === 0 ? (
-        <div className="pointer-events-auto absolute left-1/2 top-1/2 z-50 w-[min(520px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 border-4 border-[#f1cf72] bg-[#191510]/95 p-5 text-center font-mono shadow-2xl">
-          <div className="text-[18px] font-black uppercase tracking-[0.12em] text-[#ffe08a]">
-            Escritorio 2D pronto
+      {agents.length === 0 && !connectPromptOpen ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-14 z-50 flex justify-center px-4">
+          <div className="pointer-events-auto flex w-full max-w-[620px] items-center justify-between gap-4 border-4 border-[#f1cf72] bg-[#191510]/92 px-4 py-3 font-mono shadow-2xl backdrop-blur">
+            <div className="min-w-0">
+              <div className="text-[15px] font-black uppercase tracking-[0.1em] text-[#ffe08a]">
+                Escritorio 2D pronto
+              </div>
+              <p className="mt-1 text-xs leading-5 text-[#f4e3b2]">
+                Conecte o runtime ou adicione agentes para popular os setores.
+              </p>
+            </div>
+            {onAddAgent ? (
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center gap-2 border-2 border-[#3b2b1d] bg-[#f1cf72] px-4 py-2 text-xs font-black uppercase text-[#24180f] shadow-[0_4px_0_rgba(0,0,0,0.35)]"
+                onClick={onAddAgent}
+              >
+                <Plus size={15} strokeWidth={3} />
+                Add agent
+              </button>
+            ) : null}
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#f4e3b2]">
-            Conecte o runtime ou adicione agentes para popular os setores.
-          </p>
-          {onAddAgent ? (
-            <button
-              type="button"
-              className="mt-4 inline-flex items-center gap-2 border-2 border-[#3b2b1d] bg-[#f1cf72] px-4 py-2 text-xs font-black uppercase text-[#24180f] shadow-[0_4px_0_rgba(0,0,0,0.35)]"
-              onClick={onAddAgent}
-            >
-              <Plus size={15} strokeWidth={3} />
-              Add agent
-            </button>
-          ) : null}
         </div>
       ) : null}
 
