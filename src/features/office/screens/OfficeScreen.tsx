@@ -10,8 +10,8 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MessageSquare, ChevronDown, ChevronLeft, ChevronRight, Mic } from "lucide-react";
-import { RetroOffice3D } from "@/features/retro-office/RetroOffice3D";
 import type { OfficeAgent } from "@/features/retro-office/core/types";
+import { PixelOffice2D } from "@/features/office/components/PixelOffice2D";
 import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
 import { GatewayConnectScreen } from "@/features/agents/components/GatewayConnectScreen";
 import { useAgentStore, type AgentState } from "@/features/agents/state/store";
@@ -4750,7 +4750,7 @@ export function OfficeScreen({
         activeAdapterType={(selectedAdapterType as FloorProvider) ?? null}
       />
       <section className="relative h-full min-h-0 min-w-0 overflow-hidden">
-        <RetroOffice3D
+        <PixelOffice2D
           key={activeFloor.id}
           agents={allVisibleAgents}
           storageNamespace={activeFloor.id}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GitBranch, Plus, Sparkles, Trash2, Wand2, X } from "lucide-react";
-import { AgentAvatarPreview3D } from "@/features/agents/components/AgentAvatarPreview3D";
+import { AgentAvatarPreview2D } from "@/features/agents/components/AgentAvatarPreview2D";
 import { RunningAvatarLoader } from "@/features/agents/components/RunningAvatarLoader";
 import { createDefaultAgentAvatarProfile } from "@/lib/avatars/profile";
 import type {
@@ -449,7 +449,7 @@ export function CompanyBuilderModal({
                       <div className="mb-4 flex items-start justify-between gap-4">
                         <div className="flex min-w-0 items-start gap-4">
                           <div className="h-28 w-24 overflow-hidden rounded-xl border border-white/10 bg-[#070b16]">
-                            <AgentAvatarPreview3D
+                            <AgentAvatarPreview2D
                               profile={buildRoleAvatarProfile(role)}
                               className="h-full w-full"
                             />
@@ -462,7 +462,7 @@ export function CompanyBuilderModal({
                               {role.title || "Untitled role"}
                             </div>
                             <div className="mt-1 text-xs text-white/45">
-                              3D avatar preview generated for this role.
+                              2D sprite preview generated for this role.
                             </div>
                           </div>
                         </div>
@@ -797,7 +797,7 @@ export function CompanyBuilderModal({
                     }}
                   >
                     <div className="h-28 w-24 overflow-hidden rounded-xl border border-white/10 bg-[#070b16]">
-                      <AgentAvatarPreview3D
+                      <AgentAvatarPreview2D
                         profile={buildRoleAvatarProfile(plan.roles[0])}
                         className="h-full w-full"
                       />
@@ -832,7 +832,7 @@ export function CompanyBuilderModal({
                             }}
                           >
                             <div className="h-24 w-20 overflow-hidden rounded-xl border border-white/10 bg-[#070b16]">
-                              <AgentAvatarPreview3D
+                              <AgentAvatarPreview2D
                                 profile={buildRoleAvatarProfile(role)}
                                 className="h-full w-full"
                               />

@@ -7,7 +7,7 @@ const features = [
   {
     icon: Eye,
     title: "Watch agents work",
-    description: "See your AI agents in real time in a shared 3D office",
+    description: "See your AI agents in real time in a shared 2D pixel office",
   },
   {
     icon: Users,
@@ -33,7 +33,7 @@ export const WelcomeStep = () => (
         Claw3D turns your AI automation into a{" "}
         <span className="font-medium text-white">visual workplace</span> — an
         office where your AI agents collaborate, code, test, and execute
-        tasks in a shared 3D environment.
+        tasks in a shared 2D pixel environment.
       </p>
       <p className="text-sm text-white/60">
         This wizard will help you connect to your runtime gateway and get

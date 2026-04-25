@@ -37,7 +37,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "welcome",
     title: "Welcome to Claw3D",
-    description: "Your AI office in 3D",
+    description: "Your AI office in 2D pixel art",
     skippable: false,
   },
   {

@@ -14,7 +14,7 @@ import {
   type AgentAvatarProfile,
   createDefaultAgentAvatarProfile,
 } from "@/lib/avatars/profile";
-import { AgentAvatarPreview3D } from "@/features/agents/components/AgentAvatarPreview3D";
+import { AgentAvatarPreview2D } from "@/features/agents/components/AgentAvatarPreview2D";
 import { randomUUID } from "@/lib/uuid";
 
 export type AgentAvatarEditorPanelProps = {
@@ -104,7 +104,7 @@ export const AgentAvatarEditorPanel = forwardRef<
           Personalize this office avatar locally on this machine.
         </div>
         <div className="mt-4 overflow-hidden rounded-xl border border-border/45 bg-[#070b16]">
-          <AgentAvatarPreview3D profile={draft} className="h-[360px] w-full" />
+          <AgentAvatarPreview2D profile={draft} className="h-[360px] w-full" />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button
